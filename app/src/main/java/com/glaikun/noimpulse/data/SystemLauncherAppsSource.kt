@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.AlarmClock
+import android.provider.MediaStore
 import android.provider.Settings
 import android.provider.Telephony
 import com.glaikun.noimpulse.api.AppEntry
@@ -60,6 +61,8 @@ class SystemLauncherAppsSource @Inject constructor(
         Telephony.Sms.getDefaultSmsPackage(context),
         resolveDefaultPackage(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0"))),
         resolveDefaultPackage(Intent(AlarmClock.ACTION_SHOW_ALARMS)),
+        resolveDefaultPackage(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)),
+        resolveDefaultPackage(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_GALLERY)),
     ).distinct()
 
     private fun resolveDefaultPackage(intent: Intent): String? =

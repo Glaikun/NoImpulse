@@ -60,6 +60,7 @@ class HomeViewModel @Inject constructor(
         val pickupCount: Int? = null,        // null = usage access not granted
         val screenOnMinutes: Int? = null,
         val allowedApps: List<AppEntry> = emptyList(),
+        val drawerLaunchesToday: Int = 0,
     )
 
     /** Fires an immediate status re-read (seeded so the first subscriber loads at once). */
@@ -95,6 +96,7 @@ class HomeViewModel @Inject constructor(
                 pickupCount = status.usage?.pickupCount,
                 screenOnMinutes = status.usage?.screenOnMinutes,
                 allowedApps = settingsSnap.allowedApps,
+                drawerLaunchesToday = status.drawerLaunchesToday,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -134,6 +136,21 @@ class HomeViewModel @Inject constructor(
 
     fun setAppAllowed(packageName: String, allowed: Boolean) {
         viewModelScope.launch { settings.setAppAllowed(packageName, allowed) }
+    }
+
+    /**
+     * Bumps the drawer-launch counter, but ONLY for non-allowlisted packages —
+     * launching an app that's already on the home screen via the drawer shouldn't
+     * count against the friction budget. Caller still needs to invoke `launchApp`
+     * separately; this is just the persistence side.
+     */
+    fun recordDrawerLaunch(packageName: String) {
+        viewModelScope.launch {
+            val allowed = settings.allowedPackages.first()
+            if (packageName !in allowed) {
+                settings.recordDrawerLaunch()
+            }
+        }
     }
 
     /**
@@ -180,18 +197,30 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Re-reads usage access, default-home status and stats off the main thread on every
-     * [statusRefresh] signal and on a periodic poll, whichever comes first.
+     * [statusRefresh] signal and on a periodic poll, whichever comes first. The drawer
+     * counter is layered in reactively via [combine] so a [recordDrawerLaunch] propagates
+     * immediately rather than on the next poll tick.
      */
     private fun statusSnapshots(): Flow<StatusSnapshot> =
-        merge(statusRefresh, statusPollTicks())
-            .map {
-                StatusSnapshot(
-                    usageGranted = usageStats.hasUsageAccess(),
-                    isDefaultHome = launcher.isDefaultHome(),
-                    usage = usageStats.queryToday(),
-                )
-            }
-            .flowOn(ioDispatcher)
+        combine(
+            merge(statusRefresh, statusPollTicks())
+                .map {
+                    Triple(
+                        usageStats.hasUsageAccess(),
+                        launcher.isDefaultHome(),
+                        usageStats.queryToday(),
+                    )
+                }
+                .flowOn(ioDispatcher),
+            settings.drawerLaunchesToday,
+        ) { (granted, isDefault, usage), drawerCount ->
+            StatusSnapshot(
+                usageGranted = granted,
+                isDefaultHome = isDefault,
+                usage = usage,
+                drawerLaunchesToday = drawerCount,
+            )
+        }
 
     private fun statusPollTicks(): Flow<Unit> = flow {
         while (true) {
@@ -230,3 +259,11 @@ class HomeViewModel @Inject constructor(
 
 /** Formats a minute count into a human-readable string, e.g. "2h 15m". */
 internal fun formatHours(minutes: Int): String = "${minutes / 60}h ${minutes % 60}m"
+
+/**
+ * Number of UUID-tokens the user must retype to open a non-allowlisted app from the
+ * drawer, given how many drawer-launches they've already done today. 0–1 → 1 token,
+ * 2–3 → 2, 4–5 → 3, 6–7 → 4, 8+ → 5. The base of 1 means the first launch is never free.
+ */
+internal fun tokensRequired(drawerLaunchesToday: Int): Int =
+    (drawerLaunchesToday / 2 + 1).coerceIn(1, 5)

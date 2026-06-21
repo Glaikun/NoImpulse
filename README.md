@@ -56,7 +56,7 @@ This layer owns the data and is the single source of truth — the UI never read
 - **Repositories** are plain Kotlin classes that the rest of the app talks to. A `ViewModel` asks `SettingsRepository` for the allowed apps; it doesn't know or care where they're stored.
 - **Jetpack DataStore (Preferences)** — replaces `SharedPreferences`. Today it holds both the `setupComplete` flag and the allowlist itself (a `Set<String>` of package names). Good enough while the allowlist is a flat unordered set.
 - **Room** — planned for anything that needs structured rows or history (usage roll-ups, domain rules with timestamps). Not wired yet.
-- **System APIs** — `UsageStatsManager` (today's pickups + screen time), `PackageManager` (list installed apps, resolve the device's default Settings/Phone/Messages/Maps/Clock for the first-run seed), `RoleManager` (the default-home prompt). `AccessibilityService` is reserved for Phase 7 (website blocking).
+- **System APIs** — `UsageStatsManager` (today's pickups + screen time), `PackageManager` (list installed apps, resolve the device's default Settings/Phone/Messages/Maps/Clock/Camera/Gallery for the first-run seed), `RoleManager` (the default-home prompt). `AccessibilityService` is reserved for Phase 7 (website blocking).
 ---
 ### Cross-cutting concerns
 
@@ -107,7 +107,7 @@ Build a regular Compose screen that *looks* like the eventual home screen. No in
 ---
 ### Phase 2 — Allowlisting apps
 
-**Status: delivered** — The picker lives in [`SetupScreen.kt`](app/src/main/java/com/glaikun/noimpulse/ui/SetupScreen.kt) and lists every launchable app (`PackageManager` `MAIN` + `LAUNCHER` query, ourselves filtered out), with a filter `TextField` and a per-row `Switch`. Persistence is via [`DataStoreSettingsRepository`](app/src/main/java/com/glaikun/noimpulse/data/DataStoreSettingsRepository.kt) — a `Set<String>` of allowed package names, not Room. Sort order: device essentials (default Settings/Phone/SMS/Maps/Clock, resolved via `Intent` queries) → most-recently-used → alphabetical. On a truly fresh install (`setupComplete == false` AND allowlist empty), [`HomeViewModel.seedEssentialsIfFresh()`](app/src/main/java/com/glaikun/noimpulse/ui/HomeViewModel.kt) pre-allows those essentials so the home screen isn't empty.
+**Status: delivered** — The picker lives in [`SetupScreen.kt`](app/src/main/java/com/glaikun/noimpulse/ui/SetupScreen.kt) and lists every launchable app (`PackageManager` `MAIN` + `LAUNCHER` query, ourselves filtered out), with a filter `TextField` and a per-row `Switch`. Persistence is via [`DataStoreSettingsRepository`](app/src/main/java/com/glaikun/noimpulse/data/DataStoreSettingsRepository.kt) — a `Set<String>` of allowed package names, not Room. Sort order: device essentials (default Settings/Phone/SMS/Maps/Clock/Camera/Gallery, resolved via `Intent` queries) → most-recently-used → alphabetical. On a truly fresh install (`setupComplete == false` AND allowlist empty), [`HomeViewModel.seedEssentialsIfFresh()`](app/src/main/java/com/glaikun/noimpulse/ui/HomeViewModel.kt) pre-allows those essentials so the home screen isn't empty.
 
 Replace the hard-coded list with one the user picks themselves.
 

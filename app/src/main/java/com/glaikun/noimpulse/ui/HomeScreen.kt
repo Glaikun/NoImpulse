@@ -2,6 +2,7 @@ package com.glaikun.noimpulse.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,14 +20,23 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -39,9 +49,32 @@ fun HomeScreen(
     state: HomeViewModel.UiState,
     onGrantUsageAccess: () -> Unit = {},
     onLaunchApp: (String) -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
 ) {
+    val openThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
+    var dragAccum by remember { mutableStateOf(0f) }
+
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            // Detects swipe-up on the home surface. The OS reserves the very bottom
+            // gesture-inset band for Recents/Home when we hold the home role, so users
+            // whose swipe starts inside that band won't trigger this — the chevron
+            // affordance below covers them.
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragStart = { dragAccum = 0f },
+                    onDragCancel = { dragAccum = 0f },
+                    onDragEnd = { dragAccum = 0f },
+                    onVerticalDrag = { _, delta ->
+                        dragAccum += delta
+                        if (dragAccum < -openThresholdPx) {
+                            dragAccum = 0f
+                            onOpenDrawer()
+                        }
+                    },
+                )
+            },
         color = MaterialTheme.colorScheme.background,
     ) {
         Column(
@@ -95,17 +128,29 @@ fun HomeScreen(
                 UsageAccessPrompt(onGrantUsageAccess)
             }
 
-            // ── App grid ─────────────────────────────────────────
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(state.allowedApps) { app ->
-                    AppIconItem(app, onClick = { onLaunchApp(app.packageName) })
+            // ── Chevron affordance + app grid ────────────────────
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowUp,
+                    contentDescription = "Open app drawer",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("openDrawer")
+                        .clickable(onClick = onOpenDrawer),
+                )
+                Spacer(Modifier.height(8.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(state.allowedApps) { app ->
+                        AppIconItem(app, onClick = { onLaunchApp(app.packageName) })
+                    }
                 }
             }
         }

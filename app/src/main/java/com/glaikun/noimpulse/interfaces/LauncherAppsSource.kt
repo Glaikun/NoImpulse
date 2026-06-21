@@ -15,8 +15,8 @@ interface LauncherAppsSource {
 
     /**
      * Package names of the device's default apps for everyday categories — settings,
-     * dialer, SMS, maps, clock. Packages that can't be resolved on this device are
-     * omitted. Caller is responsible for cross-checking against launchable apps.
+     * dialer, SMS, maps, clock, camera, gallery. Packages that can't be resolved on this
+     * device are omitted. Caller is responsible for cross-checking against launchable apps.
      */
     fun essentialPackages(): List<String>
 }

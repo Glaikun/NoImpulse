@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -20,12 +21,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.glaikun.noimpulse.ui.AppDrawerScreen
 import com.glaikun.noimpulse.ui.HomeScreen
 import com.glaikun.noimpulse.ui.HomeViewModel
 import com.glaikun.noimpulse.ui.SetupScreen
@@ -50,6 +55,8 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.StartActivityForResult(),
                 ) { vm.refreshStatus() }
 
+                var drawerOpen by rememberSaveable { mutableStateOf(false) }
+
                 when (state.setupComplete) {
                     null -> LoadingScreen()
                     false -> {
@@ -63,11 +70,31 @@ class MainActivity : ComponentActivity() {
                             onFinish = vm::completeSetup,
                         )
                     }
-                    true -> HomeScreen(
-                        state = state,
-                        onGrantUsageAccess = ::openUsageAccessSettings,
-                        onLaunchApp = ::launchApp,
-                    )
+                    true -> if (drawerOpen) {
+                        val installedApps by vm.installedApps.collectAsStateWithLifecycle()
+                        BackHandler { drawerOpen = false }
+                        AppDrawerScreen(
+                            installedApps = installedApps,
+                            allowedPackages = state.allowedApps.mapTo(HashSet()) { it.packageName },
+                            drawerLaunchesToday = state.drawerLaunchesToday,
+                            onLaunchApp = { pkg ->
+                                drawerOpen = false
+                                launchApp(pkg)
+                            },
+                            onLaunchAfterChallenge = { pkg ->
+                                vm.recordDrawerLaunch(pkg)
+                                drawerOpen = false
+                                launchApp(pkg)
+                            },
+                        )
+                    } else {
+                        HomeScreen(
+                            state = state,
+                            onGrantUsageAccess = ::openUsageAccessSettings,
+                            onLaunchApp = ::launchApp,
+                            onOpenDrawer = { drawerOpen = true },
+                        )
+                    }
                 }
             }
         }

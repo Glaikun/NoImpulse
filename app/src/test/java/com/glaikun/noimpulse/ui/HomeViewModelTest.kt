@@ -277,6 +277,63 @@ class HomeViewModelTest {
         )
     }
 
+    // ── Drawer friction ──────────────────────────────────────────────────────
+
+    @Test
+    fun `tokensRequired follows the step curve`() {
+        assertEquals(1, tokensRequired(0))
+        assertEquals(1, tokensRequired(1))
+        assertEquals(2, tokensRequired(2))
+        assertEquals(2, tokensRequired(3))
+        assertEquals(3, tokensRequired(4))
+        assertEquals(3, tokensRequired(5))
+        assertEquals(4, tokensRequired(6))
+        assertEquals(4, tokensRequired(7))
+        assertEquals(5, tokensRequired(8))
+        assertEquals(5, tokensRequired(50))
+    }
+
+    @Test
+    fun `generateTokens returns the requested count of 6-char hex strings`() {
+        val tokens = generateTokens(3)
+        assertEquals(3, tokens.size)
+        val hex = Regex("[0-9A-F]{6}")
+        tokens.forEach { token ->
+            assertEquals(6, token.length)
+            assertTrue("Expected hex chars, got: $token", token.matches(hex))
+        }
+    }
+
+    @Test
+    fun `recordDrawerLaunch increments counter for non-allowlisted package`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = activeViewModel(null, settings = settings)
+        assertEquals(0, vm.state.value.drawerLaunchesToday)
+
+        vm.recordDrawerLaunch("com.twitter")
+        runCurrent()
+
+        assertEquals(1, vm.state.value.drawerLaunchesToday)
+    }
+
+    @Test
+    fun `recordDrawerLaunch does NOT increment for allowlisted package`() = runTest {
+        val launcher = FakeLauncherAppsSource(
+            installed = listOf(AppEntry("Twitter", "com.twitter")),
+        )
+        val settings = FakeSettingsRepository(
+            setupComplete = true,
+            allowed = setOf("com.twitter"),
+        )
+        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+        assertEquals(0, vm.state.value.drawerLaunchesToday)
+
+        vm.recordDrawerLaunch("com.twitter")
+        runCurrent()
+
+        assertEquals(0, vm.state.value.drawerLaunchesToday)
+    }
+
     @Test
     fun `state time is populated after first tick`() = runTest {
         val vm = activeViewModel(null)
@@ -347,12 +404,15 @@ private class FakeLauncherAppsSource(
 private class FakeSettingsRepository(
     setupComplete: Boolean = false,
     allowed: Set<String> = emptySet(),
+    drawerLaunches: Int = 0,
 ) : SettingsRepository {
     private val _setupComplete = MutableStateFlow(setupComplete)
     private val _allowed = MutableStateFlow(allowed)
+    private val _drawerLaunches = MutableStateFlow(drawerLaunches)
 
     override val setupComplete: Flow<Boolean> = _setupComplete
     override val allowedPackages: Flow<Set<String>> = _allowed
+    override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
 
     override suspend fun setSetupComplete(complete: Boolean) {
         _setupComplete.value = complete
@@ -361,5 +421,9 @@ private class FakeSettingsRepository(
     override suspend fun setAppAllowed(packageName: String, allowed: Boolean) {
         _allowed.value =
             if (allowed) _allowed.value + packageName else _allowed.value - packageName
+    }
+
+    override suspend fun recordDrawerLaunch() {
+        _drawerLaunches.value = _drawerLaunches.value + 1
     }
 }
