@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -116,6 +117,38 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `usageAccessGranted is true when access is granted`() = runTest {
+        val vm = activeViewModel(DailyUsage(pickupCount = 0, screenOnMinutes = 0))
+        assertTrue(vm.state.value.usageAccessGranted)
+    }
+
+    @Test
+    fun `usageAccessGranted is false when access is not granted`() = runTest {
+        val vm = activeViewModel(null)
+        assertFalse(vm.state.value.usageAccessGranted)
+    }
+
+    @Test
+    fun `refreshUsage picks up access granted after the fact`() = runTest {
+        val source = MutableUsageStatsSource()        // starts ungranted
+        val vm = HomeViewModel(
+            app = ApplicationProvider.getApplicationContext(),
+            usageStats = source,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        backgroundScope.launch { vm.state.collect {} }
+        runCurrent()
+        assertFalse(vm.state.value.usageAccessGranted)
+
+        source.grant(DailyUsage(pickupCount = 2, screenOnMinutes = 20))
+        vm.refreshUsage()
+        runCurrent()
+
+        assertTrue(vm.state.value.usageAccessGranted)
+        assertEquals(2, vm.state.value.pickupCount)
+    }
+
+    @Test
     fun `state time is populated after first tick`() = runTest {
         val vm = activeViewModel(null)
         assertTrue(vm.state.value.time.isNotBlank())
@@ -147,6 +180,24 @@ class HomeViewModelTest {
 
 // ── Test double ──────────────────────────────────────────────────────────────
 
-private class FakeUsageStatsSource(private val result: DailyUsage?) : UsageStatsSource {
+private class FakeUsageStatsSource(
+    private val result: DailyUsage?,
+    private val granted: Boolean = result != null,
+) : UsageStatsSource {
+    override fun hasUsageAccess(): Boolean = granted
     override fun queryToday(): DailyUsage? = result
+}
+
+/** Usage source whose access can be flipped on at runtime, for refresh tests. */
+private class MutableUsageStatsSource : UsageStatsSource {
+    @Volatile private var result: DailyUsage? = null
+    @Volatile private var granted: Boolean = false
+
+    fun grant(usage: DailyUsage) {
+        result = usage
+        granted = true
+    }
+
+    override fun hasUsageAccess(): Boolean = granted
+    override fun queryToday(): DailyUsage? = if (granted) result else null
 }

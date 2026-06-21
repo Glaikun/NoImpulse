@@ -4,9 +4,8 @@ import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.os.Build
 import android.os.Process
-import android.util.Log
-import com.glaikun.noimpulse.MainActivity
 import com.glaikun.noimpulse.api.DailyUsage
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -18,15 +17,29 @@ class SystemUsageStatsSource @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : UsageStatsSource {
 
-    override fun queryToday(): DailyUsage? {
+    // AppOps is the standard way to check Usage Access; the APIs are flagged
+    // deprecated but have no public replacement for this purpose.
+    @Suppress("DEPRECATION")
+    override fun hasUsageAccess(): Boolean {
         val appOps = context.getSystemService(AppOpsManager::class.java)
-        val mode = appOps.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            context.packageName,
-        )
-        Log.i(SystemUsageStatsSource::class.simpleName, "Request Query Today")
-        if (mode != AppOpsManager.MODE_ALLOWED) return null
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                context.packageName,
+            )
+        } else {
+            appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                context.packageName,
+            )
+        }
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    override fun queryToday(): DailyUsage? {
+        if (!hasUsageAccess()) return null
 
         val mgr = context.getSystemService(UsageStatsManager::class.java)
         val startOfDay = LocalDate.now()
@@ -35,20 +48,18 @@ class SystemUsageStatsSource @Inject constructor(
             .toEpochMilli()
         val usageEvents = mgr.queryEvents(startOfDay, System.currentTimeMillis())
 
-        var pickups = 0
+        var unlocks = 0
         var screenOnMs = 0L
         var lastInteractiveMs = -1L
 
         val event = UsageEvents.Event()
         while (usageEvents.hasNextEvent()) {
-            Log.i(SystemUsageStatsSource::class::simpleName.toString(), String.format("Event Triggered %s", event::class::simpleName))
-
             usageEvents.getNextEvent(event)
             when (event.eventType) {
-                UsageEvents.Event.SCREEN_INTERACTIVE -> {
-                    pickups++
-                    lastInteractiveMs = event.timeStamp
-                }
+                // "Pickups" = device unlocks.
+                UsageEvents.Event.KEYGUARD_HIDDEN -> unlocks++
+                // Screen-on time = interval between the display turning on and off.
+                UsageEvents.Event.SCREEN_INTERACTIVE -> lastInteractiveMs = event.timeStamp
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
                     if (lastInteractiveMs != -1L) {
                         screenOnMs += event.timeStamp - lastInteractiveMs
@@ -57,13 +68,13 @@ class SystemUsageStatsSource @Inject constructor(
                 }
             }
         }
-        // If screen is still on, count time until now
+        // If the screen is still on, count time until now.
         if (lastInteractiveMs != -1L) {
             screenOnMs += System.currentTimeMillis() - lastInteractiveMs
         }
 
         return DailyUsage(
-            pickupCount = pickups,
+            pickupCount = unlocks,
             screenOnMinutes = (screenOnMs / 60_000).toInt(),
         )
     }

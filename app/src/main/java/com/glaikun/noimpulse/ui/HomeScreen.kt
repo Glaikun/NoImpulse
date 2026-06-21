@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,7 +32,10 @@ import androidx.compose.ui.unit.dp
 import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
 
 @Composable
-fun HomeScreen(state: HomeViewModel.UiState) {
+fun HomeScreen(
+    state: HomeViewModel.UiState,
+    onGrantUsageAccess: () -> Unit = {},
+) {
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -68,19 +72,23 @@ fun HomeScreen(state: HomeViewModel.UiState) {
                 )
             }
 
-            // ── Stats row ────────────────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                StatChip(
-                    label = "Pickups",
-                    value = state.pickupCount?.toString() ?: "--",
-                )
-                StatChip(
-                    label = "Screen on",
-                    value = state.screenOnMinutes?.let { formatHours(it) } ?: "--",
-                )
+            // ── Stats row (or usage-access prompt) ───────────────
+            if (state.usageAccessGranted) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    StatChip(
+                        label = "Today's Pickups",
+                        value = state.pickupCount?.toString() ?: "--",
+                    )
+                    StatChip(
+                        label = "Today's Screen Time",
+                        value = state.screenOnMinutes?.let { formatHours(it) } ?: "--",
+                    )
+                }
+            } else {
+                UsageAccessPrompt(onGrantUsageAccess)
             }
 
             // ── App grid ─────────────────────────────────────────
@@ -96,6 +104,25 @@ fun HomeScreen(state: HomeViewModel.UiState) {
                     AppIconItem(name)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun UsageAccessPrompt(onGrantUsageAccess: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "Grant usage access to track screen time",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onGrantUsageAccess) {
+            Text("Grant access")
         }
     }
 }
@@ -144,7 +171,7 @@ private fun AppIconItem(name: String) {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(name = "Granted", showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
     NoImpulseTheme {
@@ -153,8 +180,24 @@ private fun HomeScreenPreview() {
                 time = "14:35",
                 date = "Saturday, 21 June",
                 batteryPercent = 82,
+                usageAccessGranted = true,
                 pickupCount = 14,
                 screenOnMinutes = 137,
+            )
+        )
+    }
+}
+
+@Preview(name = "Usage access not granted", showBackground = true)
+@Composable
+private fun HomeScreenNoAccessPreview() {
+    NoImpulseTheme {
+        HomeScreen(
+            state = HomeViewModel.UiState(
+                time = "14:35",
+                date = "Saturday, 21 June",
+                batteryPercent = 82,
+                usageAccessGranted = false,
             )
         )
     }

@@ -13,15 +13,19 @@ import com.glaikun.noimpulse.di.IoDispatcher
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import java.time.LocalDate
 import java.time.LocalTime
@@ -41,10 +45,24 @@ class HomeViewModel @Inject constructor(
         val time: String = "",
         val date: String = "",
         val batteryPercent: Int = -1,
-        val pickupCount: Int? = null,        // null = permission not granted
+        val usageAccessGranted: Boolean = false,
+        val pickupCount: Int? = null,        // null = usage access not granted
         val screenOnMinutes: Int? = null,
         val allowedApps: List<String> = ALLOWED_APPS,
     )
+
+    private data class UsageSnapshot(val granted: Boolean, val usage: DailyUsage?)
+
+    /** Fires an immediate usage re-read (seeded so the first subscriber loads at once). */
+    private val usageRefresh = MutableSharedFlow<Unit>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    ).apply { tryEmit(Unit) }
+
+    /** Re-reads usage access + stats now — call after returning from the settings screen. */
+    fun refreshUsage() {
+        usageRefresh.tryEmit(Unit)
+    }
 
     /**
      * Each source streams at its own natural cadence and they are combined into the
@@ -52,13 +70,14 @@ class HomeViewModel @Inject constructor(
      * while the screen is observing, thanks to [SharingStarted.WhileSubscribed].
      */
     val state: StateFlow<UiState> =
-        combine(minuteTicks(), batteryPercent(), dailyUsage()) { _, battery, usage ->
+        combine(minuteTicks(), batteryPercent(), usageSnapshots()) { _, battery, usage ->
             UiState(
                 time = formatTime(),
                 date = formatDate(),
                 batteryPercent = battery,
-                pickupCount = usage?.pickupCount,
-                screenOnMinutes = usage?.screenOnMinutes,
+                usageAccessGranted = usage.granted,
+                pickupCount = usage.usage?.pickupCount,
+                screenOnMinutes = usage.usage?.screenOnMinutes,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -90,13 +109,21 @@ class HomeViewModel @Inject constructor(
         awaitClose { getApplication<Application>().unregisterReceiver(receiver) }
     }
 
-    /** Polls usage stats off the main thread at a human cadence. */
-    private fun dailyUsage(): Flow<DailyUsage?> = flow {
+    /**
+     * Re-reads usage access + stats off the main thread on every [usageRefresh] signal
+     * and on a periodic poll, whichever comes first.
+     */
+    private fun usageSnapshots(): Flow<UsageSnapshot> =
+        merge(usageRefresh, usagePollTicks())
+            .map { UsageSnapshot(usageStats.hasUsageAccess(), usageStats.queryToday()) }
+            .flowOn(ioDispatcher)
+
+    private fun usagePollTicks(): Flow<Unit> = flow {
         while (true) {
-            emit(usageStats.queryToday())
             delay(USAGE_POLL_INTERVAL_MS.milliseconds)
+            emit(Unit)
         }
-    }.flowOn(ioDispatcher)
+    }
 
     private fun readBattery(intent: Intent): Int {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
