@@ -1,5 +1,6 @@
 package com.glaikun.noimpulse.ui
 
+import android.R
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,14 +16,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -41,6 +48,11 @@ fun SetupScreen(
     onFinish: () -> Unit = {},
 ) {
     val allowed = remember(state.allowedApps) { state.allowedApps.mapTo(HashSet()) { it.packageName } }
+    var filterText by rememberSaveable { mutableStateOf("") }
+    val filteredApps = remember(filterText, installedApps) {
+        if (filterText.isBlank()) installedApps
+        else installedApps.filter { it.label.contains(filterText, ignoreCase = true) }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -53,7 +65,7 @@ fun SetupScreen(
                 .padding(horizontal = 24.dp),
         ) {
             Text(
-                text = "Set up NoImpulse",
+                text = "Set Up",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(top = 24.dp, bottom = 24.dp),
             )
@@ -86,13 +98,22 @@ fun SetupScreen(
             )
             Spacer(Modifier.height(8.dp))
 
+            TextField(
+                value = filterText,
+                onValueChange = { filterText = it },
+                placeholder = { Text("Enter filter") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(8.dp))
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 contentPadding = PaddingValues(bottom = 8.dp),
             ) {
-                items(installedApps, key = { it.packageName }) { app ->
+                items(filteredApps, key = { it.packageName }) { app ->
                     AppToggleRow(
                         app = app,
                         checked = app.packageName in allowed,
