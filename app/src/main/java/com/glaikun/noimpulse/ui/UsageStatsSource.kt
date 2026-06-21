@@ -78,4 +78,25 @@ class SystemUsageStatsSource @Inject constructor(
             screenOnMinutes = (screenOnMs / 60_000).toInt(),
         )
     }
+
+    override fun recentlyUsedPackages(): List<String> {
+        if (!hasUsageAccess()) return emptyList()
+
+        val mgr = context.getSystemService(UsageStatsManager::class.java)
+        val end = System.currentTimeMillis()
+        val start = end - RECENT_WINDOW_MS
+        val stats = mgr.queryUsageStats(UsageStatsManager.INTERVAL_BEST, start, end)
+            ?: return emptyList()
+
+        return stats
+            .groupBy { it.packageName }
+            .mapValues { (_, buckets) -> buckets.maxOf { it.lastTimeUsed } }
+            .entries
+            .sortedByDescending { it.value }
+            .map { it.key }
+    }
+
+    private companion object {
+        const val RECENT_WINDOW_MS = 30L * 24 * 60 * 60 * 1000   // 30 days
+    }
 }

@@ -1,0 +1,4 @@
+package com.glaikun.noimpulse.api
+
+/** A launchable app: its display [label] and [packageName]. */
+data class AppEntry(val label: String, val packageName: String)

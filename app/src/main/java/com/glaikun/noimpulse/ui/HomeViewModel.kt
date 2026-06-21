@@ -8,8 +8,13 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.api.DailyUsage
+import com.glaikun.noimpulse.api.SettingsSnapshot
+import com.glaikun.noimpulse.api.StatusSnapshot
 import com.glaikun.noimpulse.di.IoDispatcher
+import com.glaikun.noimpulse.interfaces.LauncherAppsSource
+import com.glaikun.noimpulse.interfaces.SettingsRepository
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -27,6 +32,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -38,6 +44,8 @@ import kotlin.time.Duration.Companion.milliseconds
 class HomeViewModel @Inject constructor(
     app: Application,
     private val usageStats: UsageStatsSource,
+    private val launcher: LauncherAppsSource,
+    private val settings: SettingsRepository,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : AndroidViewModel(app) {
 
@@ -45,23 +53,23 @@ class HomeViewModel @Inject constructor(
         val time: String = "",
         val date: String = "",
         val batteryPercent: Int = -1,
+        val setupComplete: Boolean? = null,  // null = still loading from DataStore
         val usageAccessGranted: Boolean = false,
+        val isDefaultHome: Boolean = false,
         val pickupCount: Int? = null,        // null = usage access not granted
         val screenOnMinutes: Int? = null,
-        val allowedApps: List<String> = ALLOWED_APPS,
+        val allowedApps: List<AppEntry> = emptyList(),
     )
 
-    private data class UsageSnapshot(val granted: Boolean, val usage: DailyUsage?)
-
-    /** Fires an immediate usage re-read (seeded so the first subscriber loads at once). */
-    private val usageRefresh = MutableSharedFlow<Unit>(
+    /** Fires an immediate status re-read (seeded so the first subscriber loads at once). */
+    private val statusRefresh = MutableSharedFlow<Unit>(
         replay = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     ).apply { tryEmit(Unit) }
 
-    /** Re-reads usage access + stats now — call after returning from the settings screen. */
-    fun refreshUsage() {
-        usageRefresh.tryEmit(Unit)
+    /** Re-reads usage access + default-home status now — call after returning from settings. */
+    fun refreshStatus() {
+        statusRefresh.tryEmit(Unit)
     }
 
     /**
@@ -70,20 +78,58 @@ class HomeViewModel @Inject constructor(
      * while the screen is observing, thanks to [SharingStarted.WhileSubscribed].
      */
     val state: StateFlow<UiState> =
-        combine(minuteTicks(), batteryPercent(), usageSnapshots()) { _, battery, usage ->
+        combine(
+            minuteTicks(),
+            batteryPercent(),
+            statusSnapshots(),
+            settingsSnapshots(),
+        ) { _, battery, status, settingsSnap ->
             UiState(
                 time = formatTime(),
                 date = formatDate(),
                 batteryPercent = battery,
-                usageAccessGranted = usage.granted,
-                pickupCount = usage.usage?.pickupCount,
-                screenOnMinutes = usage.usage?.screenOnMinutes,
+                setupComplete = settingsSnap.setupComplete,
+                usageAccessGranted = status.usageGranted,
+                isDefaultHome = status.isDefaultHome,
+                pickupCount = status.usage?.pickupCount,
+                screenOnMinutes = status.usage?.screenOnMinutes,
+                allowedApps = settingsSnap.allowedApps,
             )
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
             initialValue = UiState(),
         )
+
+    /**
+     * All launchable apps for the picker, most-recently-used first (then alphabetical).
+     * Re-reads on [statusRefresh] so it re-sorts once usage access is granted on resume,
+     * and only runs while a screen observes it.
+     */
+    val installedApps: StateFlow<List<AppEntry>> =
+        statusRefresh
+            .map {
+                val apps = launcher.installedLaunchableApps()       // already labelled
+                val rank = usageStats.recentlyUsedPackages()
+                    .withIndex()
+                    .associate { (index, pkg) -> pkg to index }
+                apps.sortedWith(
+                    compareBy(
+                        { rank[it.packageName] ?: Int.MAX_VALUE },  // recents first, in order
+                        { it.label.lowercase() },                   // then alphabetical
+                    ),
+                )
+            }
+            .flowOn(ioDispatcher)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    fun completeSetup() {
+        viewModelScope.launch { settings.setSetupComplete(true) }
+    }
+
+    fun setAppAllowed(packageName: String, allowed: Boolean) {
+        viewModelScope.launch { settings.setAppAllowed(packageName, allowed) }
+    }
 
     /** Emits immediately, then once on every wall-clock minute boundary (drift-free). */
     private fun minuteTicks(): Flow<Unit> = flow {
@@ -110,20 +156,36 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Re-reads usage access + stats off the main thread on every [usageRefresh] signal
-     * and on a periodic poll, whichever comes first.
+     * Re-reads usage access, default-home status and stats off the main thread on every
+     * [statusRefresh] signal and on a periodic poll, whichever comes first.
      */
-    private fun usageSnapshots(): Flow<UsageSnapshot> =
-        merge(usageRefresh, usagePollTicks())
-            .map { UsageSnapshot(usageStats.hasUsageAccess(), usageStats.queryToday()) }
+    private fun statusSnapshots(): Flow<StatusSnapshot> =
+        merge(statusRefresh, statusPollTicks())
+            .map {
+                StatusSnapshot(
+                    usageGranted = usageStats.hasUsageAccess(),
+                    isDefaultHome = launcher.isDefaultHome(),
+                    usage = usageStats.queryToday(),
+                )
+            }
             .flowOn(ioDispatcher)
 
-    private fun usagePollTicks(): Flow<Unit> = flow {
+    private fun statusPollTicks(): Flow<Unit> = flow {
         while (true) {
             delay(USAGE_POLL_INTERVAL_MS.milliseconds)
             emit(Unit)
         }
     }
+
+    /** Resolves the persisted allowlist (package names) into displayable [AppEntry]s. */
+    private fun settingsSnapshots(): Flow<SettingsSnapshot> =
+        combine(settings.setupComplete, settings.allowedPackages) { complete, pkgs ->
+            SettingsSnapshot(
+                setupComplete = complete,
+                allowedApps = pkgs.mapNotNull { launcher.appEntryFor(it) }
+                    .sortedBy { it.label.lowercase() },
+            )
+        }.flowOn(ioDispatcher)
 
     private fun readBattery(intent: Intent): Int {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
@@ -132,8 +194,6 @@ class HomeViewModel @Inject constructor(
     }
 
     companion object {
-        val ALLOWED_APPS = listOf("Phone", "Messages", "Maps", "Clock", "Calculator")
-
         private const val STOP_TIMEOUT_MS = 5_000L
         private const val USAGE_POLL_INTERVAL_MS = 30_000L
 

@@ -1,10 +1,15 @@
 package com.glaikun.noimpulse.ui
 
 import androidx.test.core.app.ApplicationProvider
+import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.api.DailyUsage
+import com.glaikun.noimpulse.interfaces.LauncherAppsSource
+import com.glaikun.noimpulse.interfaces.SettingsRepository
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -47,10 +52,16 @@ class HomeViewModelTest {
      * has been produced ([runCurrent] settles all work scheduled at virtual time 0,
      * without entering the never-ending tick/poll delays).
      */
-    private fun TestScope.activeViewModel(usage: DailyUsage?): HomeViewModel {
+    private fun TestScope.activeViewModel(
+        usage: DailyUsage?,
+        launcher: LauncherAppsSource = FakeLauncherAppsSource(),
+        settings: SettingsRepository = FakeSettingsRepository(setupComplete = true),
+    ): HomeViewModel {
         val vm = HomeViewModel(
             app = ApplicationProvider.getApplicationContext(),
             usageStats = FakeUsageStatsSource(usage),
+            launcher = launcher,
+            settings = settings,
             ioDispatcher = StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch { vm.state.collect {} }
@@ -129,11 +140,13 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `refreshUsage picks up access granted after the fact`() = runTest {
+    fun `refreshStatus picks up access granted after the fact`() = runTest {
         val source = MutableUsageStatsSource()        // starts ungranted
         val vm = HomeViewModel(
             app = ApplicationProvider.getApplicationContext(),
             usageStats = source,
+            launcher = FakeLauncherAppsSource(),
+            settings = FakeSettingsRepository(setupComplete = true),
             ioDispatcher = StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch { vm.state.collect {} }
@@ -141,11 +154,78 @@ class HomeViewModelTest {
         assertFalse(vm.state.value.usageAccessGranted)
 
         source.grant(DailyUsage(pickupCount = 2, screenOnMinutes = 20))
-        vm.refreshUsage()
+        vm.refreshStatus()
         runCurrent()
 
         assertTrue(vm.state.value.usageAccessGranted)
         assertEquals(2, vm.state.value.pickupCount)
+    }
+
+    @Test
+    fun `isDefaultHome reflects launcher source`() = runTest {
+        val vm = activeViewModel(null, launcher = FakeLauncherAppsSource(defaultHome = true))
+        assertTrue(vm.state.value.isDefaultHome)
+    }
+
+    // ── Setup + allowlist ─────────────────────────────────────────────────────
+
+    @Test
+    fun `setupComplete reflects settings repository`() = runTest {
+        val vm = activeViewModel(null, settings = FakeSettingsRepository(setupComplete = false))
+        assertEquals(false, vm.state.value.setupComplete)
+    }
+
+    @Test
+    fun `completeSetup persists setupComplete true`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = false)
+        val vm = activeViewModel(null, settings = settings)
+        assertEquals(false, vm.state.value.setupComplete)
+
+        vm.completeSetup()
+        runCurrent()
+
+        assertEquals(true, vm.state.value.setupComplete)
+    }
+
+    @Test
+    fun `setAppAllowed adds the app to allowedApps`() = runTest {
+        val launcher = FakeLauncherAppsSource(installed = listOf(AppEntry("Maps", "com.maps")))
+        val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+        assertTrue(vm.state.value.allowedApps.isEmpty())
+
+        vm.setAppAllowed("com.maps", true)
+        runCurrent()
+
+        assertEquals(listOf("com.maps"), vm.state.value.allowedApps.map { it.packageName })
+    }
+
+    @Test
+    fun `installedApps lists recently used first then alphabetical`() = runTest {
+        val launcher = FakeLauncherAppsSource(
+            installed = listOf(
+                AppEntry("Alpha", "com.a"),
+                AppEntry("Bravo", "com.b"),
+                AppEntry("Charlie", "com.c"),
+            ),
+        )
+        val usage = FakeUsageStatsSource(
+            result = DailyUsage(0, 0),
+            recents = listOf("com.c", "com.a"),   // most-recent-first
+        )
+        val vm = HomeViewModel(
+            app = ApplicationProvider.getApplicationContext(),
+            usageStats = usage,
+            launcher = launcher,
+            settings = FakeSettingsRepository(setupComplete = true),
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        backgroundScope.launch { vm.installedApps.collect {} }
+        runCurrent()
+
+        assertEquals(
+            listOf("com.c", "com.a", "com.b"),    // recents in order, then the rest alphabetical
+            vm.installedApps.value.map { it.packageName },
+        )
     }
 
     @Test
@@ -161,20 +241,18 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `allowed apps list is not empty`() {
-        assertTrue(HomeViewModel.ALLOWED_APPS.isNotEmpty())
-    }
-
-    @Test
-    fun `initial state has empty time and null pickup count`() {
+    fun `initial state is loading with empty time and null setupComplete`() {
         // With no collector the WhileSubscribed flow is idle, so state holds defaults.
         val vm = HomeViewModel(
             app = ApplicationProvider.getApplicationContext(),
             usageStats = FakeUsageStatsSource(DailyUsage(1, 10)),
+            launcher = FakeLauncherAppsSource(),
+            settings = FakeSettingsRepository(setupComplete = true),
             ioDispatcher = testDispatcher,
         )
         assertEquals("", vm.state.value.time)
         assertNull(vm.state.value.pickupCount)
+        assertNull(vm.state.value.setupComplete)   // null = still loading
     }
 }
 
@@ -183,9 +261,11 @@ class HomeViewModelTest {
 private class FakeUsageStatsSource(
     private val result: DailyUsage?,
     private val granted: Boolean = result != null,
+    private val recents: List<String> = emptyList(),
 ) : UsageStatsSource {
     override fun hasUsageAccess(): Boolean = granted
     override fun queryToday(): DailyUsage? = result
+    override fun recentlyUsedPackages(): List<String> = recents
 }
 
 /** Usage source whose access can be flipped on at runtime, for refresh tests. */
@@ -200,4 +280,35 @@ private class MutableUsageStatsSource : UsageStatsSource {
 
     override fun hasUsageAccess(): Boolean = granted
     override fun queryToday(): DailyUsage? = if (granted) result else null
+    override fun recentlyUsedPackages(): List<String> = emptyList()
+}
+
+private class FakeLauncherAppsSource(
+    @Volatile var defaultHome: Boolean = false,
+    private val installed: List<AppEntry> = emptyList(),
+) : LauncherAppsSource {
+    override fun isDefaultHome(): Boolean = defaultHome
+    override fun installedLaunchableApps(): List<AppEntry> = installed
+    override fun appEntryFor(packageName: String): AppEntry? =
+        installed.find { it.packageName == packageName } ?: AppEntry(packageName, packageName)
+}
+
+private class FakeSettingsRepository(
+    setupComplete: Boolean = false,
+    allowed: Set<String> = emptySet(),
+) : SettingsRepository {
+    private val _setupComplete = MutableStateFlow(setupComplete)
+    private val _allowed = MutableStateFlow(allowed)
+
+    override val setupComplete: Flow<Boolean> = _setupComplete
+    override val allowedPackages: Flow<Set<String>> = _allowed
+
+    override suspend fun setSetupComplete(complete: Boolean) {
+        _setupComplete.value = complete
+    }
+
+    override suspend fun setAppAllowed(packageName: String, allowed: Boolean) {
+        _allowed.value =
+            if (allowed) _allowed.value + packageName else _allowed.value - packageName
+    }
 }

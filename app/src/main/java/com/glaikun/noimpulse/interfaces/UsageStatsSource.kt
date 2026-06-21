@@ -8,4 +8,7 @@ interface UsageStatsSource {
 
     /** Returns null if Usage Access is not granted. */
     fun queryToday(): DailyUsage?
+
+    /** Package names ordered most-recently-used first. Empty if Usage Access is not granted. */
+    fun recentlyUsedPackages(): List<String>
 }

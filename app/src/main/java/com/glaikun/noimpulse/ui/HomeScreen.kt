@@ -1,6 +1,7 @@
 package com.glaikun.noimpulse.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,15 +27,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
 
 @Composable
 fun HomeScreen(
     state: HomeViewModel.UiState,
     onGrantUsageAccess: () -> Unit = {},
+    onLaunchApp: (String) -> Unit = {},
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -100,8 +104,8 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(state.allowedApps) { name ->
-                    AppIconItem(name)
+                items(state.allowedApps) { app ->
+                    AppIconItem(app, onClick = { onLaunchApp(app.packageName) })
                 }
             }
         }
@@ -143,10 +147,13 @@ private fun StatChip(label: String, value: String) {
 }
 
 @Composable
-private fun AppIconItem(name: String) {
+private fun AppIconItem(app: AppEntry, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(4.dp),
+        modifier = Modifier
+            .testTag("appIcon_${app.packageName}")
+            .clickable(onClick = onClick)
+            .padding(4.dp),
     ) {
         Box(
             modifier = Modifier
@@ -156,14 +163,14 @@ private fun AppIconItem(name: String) {
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = name.first().uppercase(),
+                text = app.label.firstOrNull()?.uppercase() ?: "?",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            text = name,
+            text = app.label,
             style = MaterialTheme.typography.labelSmall,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -183,6 +190,12 @@ private fun HomeScreenPreview() {
                 usageAccessGranted = true,
                 pickupCount = 14,
                 screenOnMinutes = 137,
+                allowedApps = listOf(
+                    AppEntry("Phone", "com.android.dialer"),
+                    AppEntry("Messages", "com.android.messaging"),
+                    AppEntry("Maps", "com.google.android.apps.maps"),
+                    AppEntry("Clock", "com.android.deskclock"),
+                ),
             )
         )
     }
