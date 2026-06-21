@@ -20,9 +20,10 @@ Single `:app` module today. Tests use hand-written fakes, not mocking frameworks
 
 ## Build environment
 
-- Kotlin 2.0.21, Gradle 9.1.0, AGP 9.0.1, JVM 11
+- Kotlin 2.0.21, Gradle 8.11.1, AGP 8.7.3, JVM 11
 - `minSdk = 26` (required by `UsageStatsManager` and modern `AccessibilityService` APIs — do not lower)
 - `compileSdk` / `targetSdk` = 36
+- DI: Hilt 2.52 (+ KSP `2.0.21-1.0.28`). **Stay on the AGP 8.x line:** the Hilt Gradle plugin's bytecode transform does not work on AGP 9.0 yet ([google/dagger#5083](https://github.com/google/dagger/issues/5083)). Revisit AGP 9 once Hilt ships AGP-9 support.
 
 ## Things to avoid suggesting
 

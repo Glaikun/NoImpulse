@@ -82,8 +82,9 @@ Worth a skim before you write a line of code:
 
 Build a regular Compose screen that *looks* like the eventual home screen. No intent-filter changes, no onboarding — just one `Activity`, one screen, one `ViewModel`.
 
-- A big clock
+- time/date
 - Battery percentage
+- How many times users picked up phone & how many hours they've had
 - A hard-coded list of app names
 
 **You'll learn:** Compose layout (`Column`, `Row`, `Text`), `ViewModel` + `StateFlow`, `BatteryManager`, and how the project's UI layer fits together. Get comfortable here before adding anything else.
