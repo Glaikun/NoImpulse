@@ -28,13 +28,16 @@ NoImpulse follows the [official Android architecture recommendations](https://de
 | | Version |
 | --- | --- |
 | Kotlin | 2.0.21 |
-| Gradle | 9.1.0 |
-| Android Gradle Plugin | 9.0.1 |
+| Gradle | 8.11.1 |
+| Android Gradle Plugin | 8.7.3 |
+| Hilt | 2.52 (+ KSP `2.0.21-1.0.28`) |
 | `minSdk` | 26 (Android 8.0) |
 | `compileSdk` / `targetSdk` | 36 |
 | JVM target | 11 |
 
 `minSdk = 26` is the floor needed for the modern `UsageStatsManager` and `AccessibilityService` APIs the app uses to watch the foreground app and intercept navigation.
+
+Pinned to the AGP 8.x line for now: the Hilt Gradle plugin's bytecode transform doesn't work on AGP 9.0 yet ([google/dagger#5083](https://github.com/google/dagger/issues/5083)).
 
 ---
 ### UI layer
@@ -50,10 +53,10 @@ Built with **Jetpack Compose** (the modern replacement for XML layouts) and **Ma
 
 This layer owns the data and is the single source of truth — the UI never reads files or databases directly.
 
-- **Repositories** are plain Kotlin classes that the rest of the app talks to. A `ViewModel` asks `AllowlistRepository` for the allowed apps; it doesn't know or care where they're stored.
-- **Room** — a SQLite wrapper, used for the allowlists (apps and domains) and rule history.
-- **Jetpack DataStore** — replaces `SharedPreferences` for simple user settings and toggles.
-- **System APIs** — `UsageStatsManager` (which app is in the foreground), `AccessibilityService` (intercept navigation to block sites), `PackageManager` (list installed apps).
+- **Repositories** are plain Kotlin classes that the rest of the app talks to. A `ViewModel` asks `SettingsRepository` for the allowed apps; it doesn't know or care where they're stored.
+- **Jetpack DataStore (Preferences)** — replaces `SharedPreferences`. Today it holds both the `setupComplete` flag and the allowlist itself (a `Set<String>` of package names). Good enough while the allowlist is a flat unordered set.
+- **Room** — planned for anything that needs structured rows or history (usage roll-ups, domain rules with timestamps). Not wired yet.
+- **System APIs** — `UsageStatsManager` (today's pickups + screen time), `PackageManager` (list installed apps, resolve the device's default Settings/Phone/Messages/Maps/Clock for the first-run seed), `RoleManager` (the default-home prompt). `AccessibilityService` is reserved for Phase 7 (website blocking).
 ---
 ### Cross-cutting concerns
 
@@ -67,6 +70,8 @@ This layer owns the data and is the single source of truth — the UI never read
 
 A feature roadmap, ordered so each step builds on the previous one and teaches a chunk of Android along the way. Treat this as a learning path — not a fixed spec.
 
+**Status at a glance:** Phases 1–4 are live. Phase 5 (discouraging launcher swaps) is partially in place — `isDefaultHome` is re-checked on every `ON_RESUME`. Phases 6–7 are not started.
+
 ### Start here (before Phase 1)
 
 Worth a skim before you write a line of code:
@@ -79,6 +84,8 @@ Worth a skim before you write a line of code:
 
 ---
 ### Phase 1 — A plain home screen (no launcher behaviour yet)
+
+**Status: delivered** — [`HomeScreen.kt`](app/src/main/java/com/glaikun/noimpulse/ui/HomeScreen.kt) renders time/date, battery, today's pickup count + screen-on minutes, and a grid of the user's "fav" (allowlisted) apps. Battery is read via a sticky `ACTION_BATTERY_CHANGED` broadcast; usage stats come from `UsageStatsManager` once the user grants access.
 
 Build a regular Compose screen that *looks* like the eventual home screen. No intent-filter changes, no onboarding — just one `Activity`, one screen, one `ViewModel`.
 
@@ -100,6 +107,8 @@ Build a regular Compose screen that *looks* like the eventual home screen. No in
 ---
 ### Phase 2 — Allowlisting apps
 
+**Status: delivered** — The picker lives in [`SetupScreen.kt`](app/src/main/java/com/glaikun/noimpulse/ui/SetupScreen.kt) and lists every launchable app (`PackageManager` `MAIN` + `LAUNCHER` query, ourselves filtered out), with a filter `TextField` and a per-row `Switch`. Persistence is via [`DataStoreSettingsRepository`](app/src/main/java/com/glaikun/noimpulse/data/DataStoreSettingsRepository.kt) — a `Set<String>` of allowed package names, not Room. Sort order: device essentials (default Settings/Phone/SMS/Maps/Clock, resolved via `Intent` queries) → most-recently-used → alphabetical. On a truly fresh install (`setupComplete == false` AND allowlist empty), [`HomeViewModel.seedEssentialsIfFresh()`](app/src/main/java/com/glaikun/noimpulse/ui/HomeViewModel.kt) pre-allows those essentials so the home screen isn't empty.
+
 Replace the hard-coded list with one the user picks themselves.
 
 - An "Allowed apps" screen that lists every installed app (via `PackageManager`) with a checkbox.
@@ -117,6 +126,8 @@ Replace the hard-coded list with one the user picks themselves.
 
 ---
 ### Phase 3 — Become a launcher
+
+**Status: delivered** — `MainActivity` declares the `HOME` + `DEFAULT` intent filter and runs in `singleTask`. Tapping an app icon on the home grid calls `PackageManager.getLaunchIntentForPackage`. The `LAUNCHER` intent filter is still on the activity during development so the icon is reachable from a normal app drawer before the user makes us the default home.
 
 Now turn the app into an actual home-screen replacement.
 
@@ -136,6 +147,8 @@ Now turn the app into an actual home-screen replacement.
 ---
 ### Phase 4 — First-run onboarding
 
+**Status: delivered** — When `setupComplete` is `false`, `MainActivity` shows `SetupScreen` instead of `HomeScreen`. The screen has two permission steps (usage access, default-home role) plus the app picker from Phase 2, and a Finish button that flips `setupComplete = true` in DataStore. Default-home uses `RoleManager.createRequestRoleIntent(ROLE_HOME)` on API 29+ and falls back to `Settings.ACTION_HOME_SETTINGS` below that. No Navigation Compose graph yet — there's only the two screens, so a `when (state.setupComplete)` branch in `MainActivity` is enough.
+
 Now that the destination screens exist, build the flow that gets the user there.
 
 - A welcome screen explaining what NoImpulse does.
@@ -154,6 +167,8 @@ Now that the destination screens exist, build the flow that gets the user there.
 ---
 ### Phase 5 — Discouraging launcher swaps
 
+**Status: partial** — `MainActivity` re-checks `RoleManager.isRoleHeld(ROLE_HOME)` on every `ON_RESUME` via `LifecycleEventEffect`, so the `SetupScreen`'s "Set as default home" step un-greys itself the moment the user comes back from the system picker. No "set me back" prompt yet, and no device-owner work.
+
 Worth flagging upfront: Android intentionally lets the user change launchers from system settings, so you **cannot fully block this**. You can only add friction.
 
 Options, easiest to hardest:
@@ -170,7 +185,35 @@ Options, easiest to hardest:
 - [Dedicated devices (device-owner) overview](https://developer.android.com/work/dpc/dedicated-devices) — what's possible if you go the device-owner route, and the setup cost.
 
 ---
-### Phase 6 — Website blocking
+### Phase 6 — App drawer with escalating UUID friction
+
+A second screen, reachable by a **swipe-up gesture from the home surface**, that lists **every** installed app — not just the allowlist. The allowlist gives a frictionless path to the apps the user genuinely wants quick access to; the drawer is the escape hatch. Friction lives between "I tapped an app" and "the app actually opens": the user has to retype a short randomly-generated UUID before the launch happens. The deeper they've already drifted today (more drawer launches, more minutes in non-allowlisted apps), the more UUIDs they have to type.
+
+The whole point is "make impulsive paths inconvenient, not impossible." A single distracted tap shouldn't open Twitter; a deliberate "yes I want this" should still work.
+
+- **Swipe-up trigger.** Compose's `Modifier.pointerInput { detectVerticalDragGestures(...) }` on the home `Surface`, or a `BottomSheetScaffold` whose sheet is the drawer. Caveat noted in the user request: when NoImpulse *is* the system home, Android still owns the gesture-nav swipe-up (it goes to recents/home). The drawer's swipe is therefore an in-app gesture from anywhere on the home surface, not a system gesture — and on a 3-button-nav device you'll need an on-screen affordance too.
+- **The drawer itself.** A `LazyVerticalGrid` of every launchable app from `LauncherAppsSource.installedLaunchableApps()` (we already have this method). Same filter `TextField` pattern as `SetupScreen`.
+- **UUID challenge.** Tapping an app opens a dialog showing N short tokens (e.g. the first 6 hex chars of `UUID.randomUUID()`). A `TextField` is enabled only while the typed text matches; the launch button only enables on the last token. Full 36-char UUIDs would tip from "friction" to "frustration".
+- **Escalation signal.** Count drawer-launches in DataStore, keyed by date (e.g. `drawer_launches_2026_06_21`). Map count → token count via a small step function (1 token for the first launch of the day, +1 every ~3 launches, cap at 5). The exact curve is a product call — start hardcoded, make it configurable later if it matters.
+- **Reset / decay.** Simplest first cut: counter resets at local midnight. A time-based decay (e.g. -1 token per hour of no drawer use) is a nice second pass but not needed to ship.
+
+**You'll learn:** gesture detection in Compose (`pointerInput`, `detectVerticalDragGestures`), modal sheets vs. full screens, generating + comparing one-shot tokens, and storing per-day counters in DataStore preferences with date-keyed keys. Bigger picture: this is where the "friction over restriction" philosophy moves from a slogan to a concrete UX you can dial in.
+
+**Open questions to settle before / during implementation:**
+- Reset on midnight vs. decay vs. reset-on-allowlist-toggle?
+- Does the counter include drawer-launches of allowlisted apps (probably no — penalising the user for using "approved" apps undercuts the point)?
+- Should typing fail audibly / haptically, or just silently not enable the button?
+
+**Docs:**
+- [Compose pointer input](https://developer.android.com/jetpack/compose/gestures) and [`detectVerticalDragGestures`](https://developer.android.com/reference/kotlin/androidx/compose/foundation/gestures/package-summary#detectVerticalDragGestures(androidx.compose.ui.input.pointer.PointerInputScope,kotlin.Function1,kotlin.Function0,kotlin.Function0,kotlin.Function2)) — the gesture primitives.
+- [`BottomSheetScaffold`](https://developer.android.com/reference/kotlin/androidx/compose/material3/package-summary#BottomSheetScaffold(kotlin.Function1,androidx.compose.ui.Modifier,androidx.compose.material3.BottomSheetScaffoldState,androidx.compose.ui.unit.Dp,androidx.compose.ui.graphics.Shape,androidx.compose.ui.graphics.Color,androidx.compose.ui.graphics.Color,androidx.compose.ui.unit.Dp,androidx.compose.ui.graphics.Color,kotlin.Function0,kotlin.Boolean,kotlin.Function1)) — the easiest path to a swipe-up sheet.
+- [Android gestural navigation](https://developer.android.com/training/gestures/edge-to-edge#system-gestures) — explains which gestures the system reserves; useful for understanding why we can't intercept the OS-level swipe-up.
+- [DataStore Preferences](https://developer.android.com/topic/libraries/architecture/datastore#preferences-datastore) — for the per-day counter.
+- [`java.util.UUID`](https://developer.android.com/reference/java/util/UUID) — `UUID.randomUUID()` is fine for friction tokens; we don't need cryptographic randomness here.
+
+---
+
+### Phase 7 — Website blocking
 
 The biggest piece, deliberately last because `AccessibilityService` is fiddly.
 

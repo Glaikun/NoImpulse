@@ -200,6 +200,55 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `essentials are pre-allowed on first launch when allowlist is empty`() = runTest {
+        val launcher = FakeLauncherAppsSource(
+            installed = listOf(
+                AppEntry("Settings", "com.settings"),
+                AppEntry("Phone", "com.phone"),
+                AppEntry("Other", "com.other"),
+            ),
+            essentials = listOf("com.settings", "com.phone", "com.missing"),
+        )
+        val settings = FakeSettingsRepository(setupComplete = false)
+        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+
+        assertEquals(
+            setOf("com.settings", "com.phone"),    // 'com.missing' skipped (not launchable)
+            vm.state.value.allowedApps.map { it.packageName }.toSet(),
+        )
+    }
+
+    @Test
+    fun `essentials are not re-seeded when allowlist already has entries`() = runTest {
+        val launcher = FakeLauncherAppsSource(
+            installed = listOf(
+                AppEntry("Settings", "com.settings"),
+                AppEntry("Maps", "com.maps"),
+            ),
+            essentials = listOf("com.settings"),
+        )
+        val settings = FakeSettingsRepository(setupComplete = false, allowed = setOf("com.maps"))
+        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+
+        assertEquals(
+            setOf("com.maps"),                     // 'com.settings' NOT added — user's allowlist preserved
+            vm.state.value.allowedApps.map { it.packageName }.toSet(),
+        )
+    }
+
+    @Test
+    fun `essentials are not seeded once setup is complete`() = runTest {
+        val launcher = FakeLauncherAppsSource(
+            installed = listOf(AppEntry("Settings", "com.settings")),
+            essentials = listOf("com.settings"),
+        )
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+
+        assertTrue(vm.state.value.allowedApps.isEmpty())
+    }
+
+    @Test
     fun `installedApps lists recently used first then alphabetical`() = runTest {
         val launcher = FakeLauncherAppsSource(
             installed = listOf(
@@ -286,11 +335,13 @@ private class MutableUsageStatsSource : UsageStatsSource {
 private class FakeLauncherAppsSource(
     @Volatile var defaultHome: Boolean = false,
     private val installed: List<AppEntry> = emptyList(),
+    private val essentials: List<String> = emptyList(),
 ) : LauncherAppsSource {
     override fun isDefaultHome(): Boolean = defaultHome
     override fun installedLaunchableApps(): List<AppEntry> = installed
     override fun appEntryFor(packageName: String): AppEntry? =
         installed.find { it.packageName == packageName } ?: AppEntry(packageName, packageName)
+    override fun essentialPackages(): List<String> = essentials
 }
 
 private class FakeSettingsRepository(

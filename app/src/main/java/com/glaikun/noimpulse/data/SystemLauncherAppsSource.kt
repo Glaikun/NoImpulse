@@ -4,7 +4,11 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.AlarmClock
+import android.provider.Settings
+import android.provider.Telephony
 import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.interfaces.LauncherAppsSource
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -49,4 +53,17 @@ class SystemLauncherAppsSource @Inject constructor(
     } catch (_: PackageManager.NameNotFoundException) {
         null
     }
+
+    override fun essentialPackages(): List<String> = listOfNotNull(
+        resolveDefaultPackage(Intent(Settings.ACTION_SETTINGS)),
+        resolveDefaultPackage(Intent(Intent.ACTION_DIAL)),
+        Telephony.Sms.getDefaultSmsPackage(context),
+        resolveDefaultPackage(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0"))),
+        resolveDefaultPackage(Intent(AlarmClock.ACTION_SHOW_ALARMS)),
+    ).distinct()
+
+    private fun resolveDefaultPackage(intent: Intent): String? =
+        pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo
+            ?.packageName
 }

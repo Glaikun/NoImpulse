@@ -12,4 +12,11 @@ interface LauncherAppsSource {
 
     /** Resolves a single package to its [AppEntry], or null if not installed/launchable. */
     fun appEntryFor(packageName: String): AppEntry?
+
+    /**
+     * Package names of the device's default apps for everyday categories — settings,
+     * dialer, SMS, maps, clock. Packages that can't be resolved on this device are
+     * omitted. Caller is responsible for cross-checking against launchable apps.
+     */
+    fun essentialPackages(): List<String>
 }

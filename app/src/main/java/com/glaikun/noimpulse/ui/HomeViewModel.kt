@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -123,12 +124,34 @@ class HomeViewModel @Inject constructor(
             .flowOn(ioDispatcher)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
+    init {
+        seedEssentialsIfFresh()
+    }
+
     fun completeSetup() {
         viewModelScope.launch { settings.setSetupComplete(true) }
     }
 
     fun setAppAllowed(packageName: String, allowed: Boolean) {
         viewModelScope.launch { settings.setAppAllowed(packageName, allowed) }
+    }
+
+    /**
+     * On first launch (setup incomplete and the allowlist still empty) pre-allow the
+     * device's default settings/dialer/SMS/maps/clock so the home screen has something
+     * usable out of the box. Idempotent — once the allowlist is non-empty it no-ops,
+     * so users who turn an essential off won't have it silently re-added.
+     */
+    private fun seedEssentialsIfFresh() {
+        viewModelScope.launch(ioDispatcher) {
+            if (settings.setupComplete.first()) return@launch
+            if (settings.allowedPackages.first().isNotEmpty()) return@launch
+            val launchable = launcher.installedLaunchableApps()
+                .mapTo(HashSet()) { it.packageName }
+            launcher.essentialPackages()
+                .filter { it in launchable }
+                .forEach { settings.setAppAllowed(it, true) }
+        }
     }
 
     /** Emits immediately, then once on every wall-clock minute boundary (drift-free). */

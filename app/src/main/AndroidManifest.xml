@@ -6,11 +6,27 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
-    <!-- See other launchable apps (Android 11+ package visibility) for the allowlist picker. -->
+    <!-- Android 11+ package visibility: see other launchable apps for the allowlist
+         picker, and resolve the device's default settings/dialer/maps/clock so we can
+         pre-allow them on first launch. (SMS uses Telephony.Sms.getDefaultSmsPackage
+         which doesn't need a <queries> entry.) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS" />
         </intent>
     </queries>
 
