@@ -1,9 +1,7 @@
 package com.glaikun.noimpulse.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -14,11 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -35,7 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -51,6 +46,7 @@ fun AppDrawerScreen(
     drawerLaunchesToday: Int,
     onLaunchApp: (String) -> Unit = {},
     onLaunchAfterChallenge: (String) -> Unit = {},
+    loadIcon: (String) -> android.graphics.drawable.Drawable? = { null },
 ) {
     val tokenCount = remember(drawerLaunchesToday) { tokensRequired(drawerLaunchesToday) }
     var filterText by rememberSaveable { mutableStateOf("") }
@@ -99,7 +95,7 @@ fun AppDrawerScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(filteredApps, key = { it.packageName }) { app ->
-                    DrawerAppItem(app = app, onClick = {
+                    DrawerAppItem(app = app, loadIcon = loadIcon, onClick = {
                         if (app.packageName in allowedPackages) {
                             onLaunchApp(app.packageName)
                         } else {
@@ -126,7 +122,11 @@ fun AppDrawerScreen(
 }
 
 @Composable
-private fun DrawerAppItem(app: AppEntry, onClick: () -> Unit) {
+private fun DrawerAppItem(
+    app: AppEntry,
+    loadIcon: (String) -> android.graphics.drawable.Drawable?,
+    onClick: () -> Unit,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -134,19 +134,7 @@ private fun DrawerAppItem(app: AppEntry, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(4.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = app.label.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
+        AppIcon(app = app, loadIcon = loadIcon)
         Spacer(Modifier.height(4.dp))
         Text(
             text = app.label,

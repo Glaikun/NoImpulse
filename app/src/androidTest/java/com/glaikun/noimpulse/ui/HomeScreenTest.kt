@@ -56,7 +56,7 @@ class HomeScreenTest {
             HomeScreen(
                 state = HomeViewModel.UiState(
                     usageAccessGranted = true,
-                    allowedApps = listOf(AppEntry("Maps", "com.maps")),
+                    homeApps = listOf(AppEntry("Maps", "com.maps")),
                 ),
                 onLaunchApp = { launched = it },
             )

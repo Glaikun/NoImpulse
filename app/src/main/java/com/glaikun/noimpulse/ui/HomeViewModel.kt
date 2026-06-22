@@ -60,6 +60,7 @@ class HomeViewModel @Inject constructor(
         val pickupCount: Int? = null,        // null = usage access not granted
         val screenOnMinutes: Int? = null,
         val allowedApps: List<AppEntry> = emptyList(),
+        val homeApps: List<AppEntry> = emptyList(),
         val drawerLaunchesToday: Int = 0,
     )
 
@@ -85,7 +86,8 @@ class HomeViewModel @Inject constructor(
             batteryPercent(),
             statusSnapshots(),
             settingsSnapshots(),
-        ) { _, battery, status, settingsSnap ->
+            homeApps(),
+        ) { _, battery, status, settingsSnap, homeApps ->
             UiState(
                 time = formatTime(),
                 date = formatDate(),
@@ -96,6 +98,7 @@ class HomeViewModel @Inject constructor(
                 pickupCount = status.usage?.pickupCount,
                 screenOnMinutes = status.usage?.screenOnMinutes,
                 allowedApps = settingsSnap.allowedApps,
+                homeApps = homeApps,
                 drawerLaunchesToday = status.drawerLaunchesToday,
             )
         }.stateIn(
@@ -129,6 +132,10 @@ class HomeViewModel @Inject constructor(
     init {
         seedEssentialsIfFresh()
     }
+
+    /** The greyscale-rendered launcher icon for [packageName] (cached in the source). */
+    fun loadIcon(packageName: String): android.graphics.drawable.Drawable? =
+        launcher.loadIcon(packageName)
 
     fun completeSetup() {
         viewModelScope.launch { settings.setSetupComplete(true) }
@@ -228,6 +235,13 @@ class HomeViewModel @Inject constructor(
             emit(Unit)
         }
     }
+
+    /**
+     * The fixed home-screen apps (phone, messages, camera, maps). Re-resolved on every
+     * [statusRefresh] so changing a system default app reflects on resume.
+     */
+    private fun homeApps(): Flow<List<AppEntry>> =
+        statusRefresh.map { launcher.homeScreenApps() }.flowOn(ioDispatcher)
 
     /** Resolves the persisted allowlist (package names) into displayable [AppEntry]s. */
     private fun settingsSnapshots(): Flow<SettingsSnapshot> =

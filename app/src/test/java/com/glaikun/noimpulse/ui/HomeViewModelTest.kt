@@ -398,6 +398,8 @@ private class FakeLauncherAppsSource(
     override fun installedLaunchableApps(): List<AppEntry> = installed
     override fun appEntryFor(packageName: String): AppEntry? =
         installed.find { it.packageName == packageName } ?: AppEntry(packageName, packageName)
+    override fun loadIcon(packageName: String): android.graphics.drawable.Drawable? = null
+    override fun homeScreenApps(): List<AppEntry> = emptyList()
     override fun essentialPackages(): List<String> = essentials
 }
 

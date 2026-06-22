@@ -1,10 +1,8 @@
 package com.glaikun.noimpulse.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
@@ -50,6 +47,7 @@ fun HomeScreen(
     onGrantUsageAccess: () -> Unit = {},
     onLaunchApp: (String) -> Unit = {},
     onOpenDrawer: () -> Unit = {},
+    loadIcon: (String) -> android.graphics.drawable.Drawable? = { null },
 ) {
     val openThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
     var dragAccum by remember { mutableStateOf(0f) }
@@ -148,8 +146,8 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(state.allowedApps) { app ->
-                        AppIconItem(app, onClick = { onLaunchApp(app.packageName) })
+                    items(state.homeApps) { app ->
+                        AppIconItem(app, loadIcon, onClick = { onLaunchApp(app.packageName) })
                     }
                 }
             }
@@ -192,7 +190,11 @@ private fun StatChip(label: String, value: String) {
 }
 
 @Composable
-private fun AppIconItem(app: AppEntry, onClick: () -> Unit) {
+private fun AppIconItem(
+    app: AppEntry,
+    loadIcon: (String) -> android.graphics.drawable.Drawable?,
+    onClick: () -> Unit,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -200,19 +202,7 @@ private fun AppIconItem(app: AppEntry, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(4.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = app.label.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
+        AppIcon(app = app, loadIcon = loadIcon)
         Spacer(Modifier.height(4.dp))
         Text(
             text = app.label,
@@ -235,11 +225,11 @@ private fun HomeScreenPreview() {
                 usageAccessGranted = true,
                 pickupCount = 14,
                 screenOnMinutes = 137,
-                allowedApps = listOf(
+                homeApps = listOf(
                     AppEntry("Phone", "com.android.dialer"),
                     AppEntry("Messages", "com.android.messaging"),
+                    AppEntry("Camera", "com.android.camera2"),
                     AppEntry("Maps", "com.google.android.apps.maps"),
-                    AppEntry("Clock", "com.android.deskclock"),
                 ),
             )
         )

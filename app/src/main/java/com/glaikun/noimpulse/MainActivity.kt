@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
                                 drawerOpen = false
                                 launchApp(pkg)
                             },
+                            loadIcon = vm::loadIcon,
                         )
                     } else {
                         HomeScreen(
@@ -93,6 +94,7 @@ class MainActivity : ComponentActivity() {
                             onGrantUsageAccess = ::openUsageAccessSettings,
                             onLaunchApp = ::launchApp,
                             onOpenDrawer = { drawerOpen = true },
+                            loadIcon = vm::loadIcon,
                         )
                     }
                 }

@@ -4,6 +4,7 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.provider.AlarmClock
@@ -54,6 +55,20 @@ class SystemLauncherAppsSource @Inject constructor(
     } catch (_: PackageManager.NameNotFoundException) {
         null
     }
+
+    // Loads on a cold miss only — the UI layer (AppIcon) caches the decoded result.
+    override fun loadIcon(packageName: String): Drawable? = try {
+        pm.getApplicationIcon(packageName)
+    } catch (_: PackageManager.NameNotFoundException) {
+        null
+    }
+
+    override fun homeScreenApps(): List<AppEntry> = listOfNotNull(
+        resolveDefaultPackage(Intent(Intent.ACTION_DIAL)),                       // phone
+        Telephony.Sms.getDefaultSmsPackage(context),                            // messages
+        resolveDefaultPackage(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)), // camera
+        resolveDefaultPackage(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0"))),     // maps
+    ).distinct().mapNotNull { appEntryFor(it) }
 
     override fun essentialPackages(): List<String> = listOfNotNull(
         resolveDefaultPackage(Intent(Settings.ACTION_SETTINGS)),
