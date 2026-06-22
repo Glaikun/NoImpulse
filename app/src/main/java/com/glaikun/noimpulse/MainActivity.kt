@@ -87,6 +87,10 @@ class MainActivity : ComponentActivity() {
                                 launchApp(pkg)
                             },
                             loadIcon = vm::loadIcon,
+                            onSetAppAllowed = vm::setAppAllowed,
+                            appFriction = state.appFriction,
+                            onAddAppFriction = vm::addAppFriction,
+                            onRemoveAppFriction = vm::removeAppFriction,
                         )
                     } else {
                         HomeScreen(

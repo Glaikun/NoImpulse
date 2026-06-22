@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.glaikun.noimpulse.api.FrictionRule
+import com.glaikun.noimpulse.api.FrictionType
 import com.glaikun.noimpulse.interfaces.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -22,6 +24,13 @@ class DataStoreSettingsRepository @Inject constructor(
 
     override val allowedPackages: Flow<Set<String>> =
         dataStore.data.map { it[Keys.ALLOWED_PACKAGES] ?: emptySet() }
+
+    override val appFriction: Flow<Map<String, List<FrictionRule>>> =
+        dataStore.data.map { prefs ->
+            (prefs[Keys.APP_FRICTION] ?: emptySet())
+                .mapNotNull(::decodeFriction)
+                .groupBy({ it.first }, { it.second })
+        }
 
     override val drawerLaunchesToday: Flow<Int> =
         dataStore.data.map { prefs ->
@@ -45,6 +54,20 @@ class DataStoreSettingsRepository @Inject constructor(
         }
     }
 
+    override suspend fun addAppFriction(packageName: String, rule: FrictionRule) {
+        dataStore.edit { prefs ->
+            prefs[Keys.APP_FRICTION] =
+                (prefs[Keys.APP_FRICTION] ?: emptySet()) + encodeFriction(packageName, rule)
+        }
+    }
+
+    override suspend fun removeAppFriction(packageName: String, rule: FrictionRule) {
+        dataStore.edit { prefs ->
+            prefs[Keys.APP_FRICTION] =
+                (prefs[Keys.APP_FRICTION] ?: emptySet()) - encodeFriction(packageName, rule)
+        }
+    }
+
     override suspend fun recordDrawerLaunch() {
         val today = LocalDate.now().toString()
         dataStore.edit { prefs ->
@@ -58,7 +81,21 @@ class DataStoreSettingsRepository @Inject constructor(
     private object Keys {
         val SETUP_COMPLETE = booleanPreferencesKey("setup_complete")
         val ALLOWED_PACKAGES = stringSetPreferencesKey("allowed_packages")
+        val APP_FRICTION = stringSetPreferencesKey("app_friction")
         val DRAWER_LAUNCHES_TODAY = intPreferencesKey("drawer_launches_today")
         val DRAWER_COUNTER_DATE = stringPreferencesKey("drawer_counter_date")
     }
+}
+
+/** Encodes a rule as "package|TYPE|param". Package names never contain '|'. */
+private fun encodeFriction(packageName: String, rule: FrictionRule): String =
+    "$packageName|${rule.type.name}|${rule.param}"
+
+/** Inverse of [encodeFriction]; returns null for malformed or unknown entries. */
+private fun decodeFriction(encoded: String): Pair<String, FrictionRule>? {
+    val parts = encoded.split('|')
+    if (parts.size != 3) return null
+    val type = FrictionType.entries.find { it.name == parts[1] } ?: return null
+    val param = parts[2].toIntOrNull() ?: return null
+    return parts[0] to FrictionRule(type, param)
 }

@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.glaikun.noimpulse.api.FrictionRule
+import com.glaikun.noimpulse.api.FrictionType
 import com.glaikun.noimpulse.interfaces.SettingsRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -13,6 +16,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -80,6 +84,65 @@ class DataStoreSettingsRepositoryTest {
         repo.setAppAllowed("com.maps", true)
         repo.setAppAllowed("com.maps", true)
         assertEquals(setOf("com.maps"), repo.allowedPackages.first())
+    }
+
+    // ── Per-app friction ─────────────────────────────────────────────────────
+
+    @Test
+    fun `appFriction defaults to empty`() = runTest {
+        assertTrue(newRepo().appFriction.first().isEmpty())
+    }
+
+    @Test
+    fun `app frictions stack per app and remove individually`() = runTest {
+        val repo = newRepo()
+
+        repo.addAppFriction("com.maps", FrictionRule(FrictionType.TIMED_WAIT, 30))
+        repo.addAppFriction("com.maps", FrictionRule(FrictionType.MATH, 1))
+        repo.addAppFriction("com.twitter", FrictionRule(FrictionType.REFLECTION, 3))
+
+        assertEquals(
+            // sorted for a deterministic assertion — stored order isn't guaranteed
+            listOf(FrictionRule(FrictionType.MATH, 1), FrictionRule(FrictionType.TIMED_WAIT, 30)),
+            repo.appFriction.first()["com.maps"]!!.sortedBy { it.type.name },
+        )
+        assertEquals(
+            listOf(FrictionRule(FrictionType.REFLECTION, 3)),
+            repo.appFriction.first()["com.twitter"],
+        )
+
+        // Adding a duplicate is a no-op (set semantics).
+        repo.addAppFriction("com.maps", FrictionRule(FrictionType.MATH, 1))
+        assertEquals(2, repo.appFriction.first()["com.maps"]!!.size)
+
+        // Remove one rule; the other remains.
+        repo.removeAppFriction("com.maps", FrictionRule(FrictionType.TIMED_WAIT, 30))
+        assertEquals(
+            listOf(FrictionRule(FrictionType.MATH, 1)),
+            repo.appFriction.first()["com.maps"],
+        )
+
+        // Removing the last rule drops the app from the map.
+        repo.removeAppFriction("com.maps", FrictionRule(FrictionType.MATH, 1))
+        assertNull(repo.appFriction.first()["com.maps"])
+    }
+
+    @Test
+    fun `appFriction skips malformed entries`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[stringSetPreferencesKey("app_friction")] = setOf(
+                "com.maps|TIMED_WAIT|30",   // valid
+                "com.bad|NOPE|5",           // unknown type
+                "com.bad2|MATH|x",          // non-int param
+                "garbage",                  // wrong shape
+            )
+        }
+
+        assertEquals(
+            mapOf("com.maps" to listOf(FrictionRule(FrictionType.TIMED_WAIT, 30))),
+            repo.appFriction.first(),
+        )
     }
 
     // ── Drawer-launch counter ────────────────────────────────────────────────

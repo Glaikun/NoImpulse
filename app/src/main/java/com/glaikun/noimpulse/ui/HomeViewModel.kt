@@ -9,7 +9,7 @@ import android.os.BatteryManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.glaikun.noimpulse.api.AppEntry
-import com.glaikun.noimpulse.api.DailyUsage
+import com.glaikun.noimpulse.api.FrictionRule
 import com.glaikun.noimpulse.api.SettingsSnapshot
 import com.glaikun.noimpulse.api.StatusSnapshot
 import com.glaikun.noimpulse.di.IoDispatcher
@@ -61,6 +61,7 @@ class HomeViewModel @Inject constructor(
         val screenOnMinutes: Int? = null,
         val allowedApps: List<AppEntry> = emptyList(),
         val homeApps: List<AppEntry> = emptyList(),
+        val appFriction: Map<String, List<FrictionRule>> = emptyMap(),
         val drawerLaunchesToday: Int = 0,
     )
 
@@ -99,6 +100,7 @@ class HomeViewModel @Inject constructor(
                 screenOnMinutes = status.usage?.screenOnMinutes,
                 allowedApps = settingsSnap.allowedApps,
                 homeApps = homeApps,
+                appFriction = settingsSnap.appFriction,
                 drawerLaunchesToday = status.drawerLaunchesToday,
             )
         }.stateIn(
@@ -143,6 +145,16 @@ class HomeViewModel @Inject constructor(
 
     fun setAppAllowed(packageName: String, allowed: Boolean) {
         viewModelScope.launch { settings.setAppAllowed(packageName, allowed) }
+    }
+
+    /** Adds an opening-friction rule to an app. */
+    fun addAppFriction(packageName: String, rule: FrictionRule) {
+        viewModelScope.launch { settings.addAppFriction(packageName, rule) }
+    }
+
+    /** Removes one opening-friction rule from an app. */
+    fun removeAppFriction(packageName: String, rule: FrictionRule) {
+        viewModelScope.launch { settings.removeAppFriction(packageName, rule) }
     }
 
     /**
@@ -245,11 +257,16 @@ class HomeViewModel @Inject constructor(
 
     /** Resolves the persisted allowlist (package names) into displayable [AppEntry]s. */
     private fun settingsSnapshots(): Flow<SettingsSnapshot> =
-        combine(settings.setupComplete, settings.allowedPackages) { complete, pkgs ->
+        combine(
+            settings.setupComplete,
+            settings.allowedPackages,
+            settings.appFriction,
+        ) { complete, pkgs, friction ->
             SettingsSnapshot(
                 setupComplete = complete,
                 allowedApps = pkgs.mapNotNull { launcher.appEntryFor(it) }
                     .sortedBy { it.label.lowercase() },
+                appFriction = friction,
             )
         }.flowOn(ioDispatcher)
 

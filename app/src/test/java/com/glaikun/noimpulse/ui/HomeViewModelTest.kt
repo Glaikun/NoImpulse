@@ -3,6 +3,8 @@ package com.glaikun.noimpulse.ui
 import androidx.test.core.app.ApplicationProvider
 import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.api.DailyUsage
+import com.glaikun.noimpulse.api.FrictionRule
+import com.glaikun.noimpulse.api.FrictionType
 import com.glaikun.noimpulse.interfaces.LauncherAppsSource
 import com.glaikun.noimpulse.interfaces.SettingsRepository
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
@@ -197,6 +199,31 @@ class HomeViewModelTest {
         runCurrent()
 
         assertEquals(listOf("com.maps"), vm.state.value.allowedApps.map { it.packageName })
+    }
+
+    @Test
+    fun `app frictions stack and can be removed individually`() = runTest {
+        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        assertTrue(vm.state.value.appFriction.isEmpty())
+
+        vm.addAppFriction("com.maps", FrictionRule(FrictionType.TIMED_WAIT, 30))
+        vm.addAppFriction("com.maps", FrictionRule(FrictionType.MATH, 1))
+        runCurrent()
+        assertEquals(
+            listOf(FrictionRule(FrictionType.TIMED_WAIT, 30), FrictionRule(FrictionType.MATH, 1)),
+            vm.state.value.appFriction["com.maps"],
+        )
+
+        vm.removeAppFriction("com.maps", FrictionRule(FrictionType.TIMED_WAIT, 30))
+        runCurrent()
+        assertEquals(
+            listOf(FrictionRule(FrictionType.MATH, 1)),
+            vm.state.value.appFriction["com.maps"],
+        )
+
+        vm.removeAppFriction("com.maps", FrictionRule(FrictionType.MATH, 1))
+        runCurrent()
+        assertTrue(vm.state.value.appFriction.isEmpty())
     }
 
     @Test
@@ -411,9 +438,11 @@ private class FakeSettingsRepository(
     private val _setupComplete = MutableStateFlow(setupComplete)
     private val _allowed = MutableStateFlow(allowed)
     private val _drawerLaunches = MutableStateFlow(drawerLaunches)
+    private val _appFriction = MutableStateFlow<Map<String, List<FrictionRule>>>(emptyMap())
 
     override val setupComplete: Flow<Boolean> = _setupComplete
     override val allowedPackages: Flow<Set<String>> = _allowed
+    override val appFriction: Flow<Map<String, List<FrictionRule>>> = _appFriction
     override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
 
     override suspend fun setSetupComplete(complete: Boolean) {
@@ -423,6 +452,20 @@ private class FakeSettingsRepository(
     override suspend fun setAppAllowed(packageName: String, allowed: Boolean) {
         _allowed.value =
             if (allowed) _allowed.value + packageName else _allowed.value - packageName
+    }
+
+    override suspend fun addAppFriction(packageName: String, rule: FrictionRule) {
+        val current = _appFriction.value[packageName].orEmpty()
+        if (rule !in current) {
+            _appFriction.value = _appFriction.value + (packageName to (current + rule))
+        }
+    }
+
+    override suspend fun removeAppFriction(packageName: String, rule: FrictionRule) {
+        val updated = _appFriction.value[packageName].orEmpty() - rule
+        _appFriction.value =
+            if (updated.isEmpty()) _appFriction.value - packageName
+            else _appFriction.value + (packageName to updated)
     }
 
     override suspend fun recordDrawerLaunch() {
