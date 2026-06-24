@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,6 +44,7 @@ fun SetupScreen(
     installedApps: List<AppEntry>,
     onGrantUsageAccess: () -> Unit = {},
     onSetDefaultHome: () -> Unit = {},
+    onGrantAccessibility: () -> Unit = {},
     onToggleApp: (String, Boolean) -> Unit = { _, _ -> },
     onFinish: () -> Unit = {},
 ) {
@@ -51,6 +54,10 @@ fun SetupScreen(
         if (filterText.isBlank()) installedApps
         else installedApps.filter { it.label.contains(filterText, ignoreCase = true) }
     }
+    // The accessibility pre-prompt is shown both when the user taps "Grant" on
+    // the tile and when they tap the "Why?" link. Tracking it locally keeps the
+    // dialog state out of the snapshot.
+    var showAccessibilityPrompt by rememberSaveable { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -82,6 +89,12 @@ fun SetupScreen(
                 granted = state.isDefaultHome,
                 actionLabel = "Set",
                 onAction = onSetDefaultHome,
+            )
+            Spacer(Modifier.height(16.dp))
+            AccessibilityPermissionStep(
+                granted = state.accessibilityGranted,
+                onTapGrant = { showAccessibilityPrompt = true },
+                onTapWhy = { showAccessibilityPrompt = true },
             )
 
             Spacer(Modifier.height(24.dp))
@@ -131,6 +144,114 @@ fun SetupScreen(
             }
         }
     }
+
+    if (showAccessibilityPrompt) {
+        AccessibilityPrePromptDialog(
+            onDismiss = { showAccessibilityPrompt = false },
+            onConfirm = {
+                showAccessibilityPrompt = false
+                onGrantAccessibility()
+            },
+        )
+    }
+}
+
+/**
+ * Accessibility tile + inline "Why?" link. Variant of [PermissionStep] because the
+ * accessibility consent is sensitive enough that we want the affordance to read
+ * the pre-prompt right there, not buried behind a single Grant button.
+ */
+@Composable
+private fun AccessibilityPermissionStep(
+    granted: Boolean,
+    onTapGrant: () -> Unit,
+    onTapWhy: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        PermissionStep(
+            title = "App-switch detection",
+            subtitle = "Re-trigger friction when a friction-locked app comes back to the foreground. " +
+                "Optional — the rest of the launcher works without it.",
+            granted = granted,
+            actionLabel = "Grant",
+            onAction = onTapGrant,
+        )
+        if (!granted) {
+            TextButton(
+                onClick = onTapWhy,
+                modifier = Modifier.testTag("accessibilityWhy"),
+            ) { Text("Why does this need a scary permission?") }
+        }
+    }
+}
+
+@Composable
+private fun AccessibilityPrePromptDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Why does NoImpulse need accessibility access?") },
+        text = {
+            Column {
+                Text(
+                    text = "Android only lets an app notice when a different app comes to " +
+                        "the foreground if it asks via the Accessibility API. We use it for " +
+                        "one thing: re-showing the friction screen when you return to an app " +
+                        "you've added friction to.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "What this service can see",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = "• The package name of the app currently in the foreground.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "What it cannot do",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = "• Read screen contents — messages, passwords, anything you " +
+                        "type. The API itself withholds that data " +
+                        "(canRetrieveWindowContent is false).\n" +
+                        "• Take screenshots or screen recordings.\n" +
+                        "• Make any network calls. The app declares no INTERNET permission " +
+                        "and is open source so anyone can verify.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "About the next screen",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = "Android shows a strong warning on the accessibility settings " +
+                        "page. That warning is the system's default for any accessibility " +
+                        "app; it describes what an accessibility app could do, not what " +
+                        "this one actually does.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.testTag("accessibilityOpenSettings"),
+            ) { Text("Open system settings") }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("accessibilityMaybeLater"),
+            ) { Text("Maybe later") }
+        },
+    )
 }
 
 @Composable

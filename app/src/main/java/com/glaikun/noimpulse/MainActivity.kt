@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,69 +22,90 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.ui.AppDrawerScreen
+import com.glaikun.noimpulse.ui.AppScreen
+import com.glaikun.noimpulse.ui.FrictionGate
 import com.glaikun.noimpulse.ui.HomeScreen
 import com.glaikun.noimpulse.ui.HomeViewModel
+import com.glaikun.noimpulse.ui.IntroScreen
 import com.glaikun.noimpulse.ui.SetupScreen
 import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
+import com.glaikun.noimpulse.ui.tokensRequired
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    private val vm: HomeViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        Log.i(MainActivity::class.simpleName, "Creating")
+        Log.i(TAG, "Creating")
         enableEdgeToEdge()
+
+        // Intent received on cold start; onNewIntent handles subsequent ones.
+        consumeRefrictionExtra(intent)
+
         setContent {
             NoImpulseTheme {
-                val vm: HomeViewModel = hiltViewModel()
-                // Re-read usage access / default-home status whenever we come back.
+                // Re-read usage access / default-home / accessibility status whenever we come back.
                 LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshStatus() }
+
                 val state by vm.state.collectAsStateWithLifecycle()
+                val screen by vm.screen.collectAsStateWithLifecycle()
+                val installedApps by vm.installedApps.collectAsStateWithLifecycle()
 
                 val roleLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
                 ) { vm.refreshStatus() }
 
-                var drawerOpen by rememberSaveable { mutableStateOf(false) }
+                when (val s = screen) {
+                    AppScreen.Loading -> LoadingScreen()
 
-                when (state.setupComplete) {
-                    null -> LoadingScreen()
-                    false -> {
-                        val installedApps by vm.installedApps.collectAsStateWithLifecycle()
-                        SetupScreen(
-                            state = state,
-                            installedApps = installedApps,
-                            onGrantUsageAccess = ::openUsageAccessSettings,
-                            onSetDefaultHome = { requestDefaultHome(roleLauncher) },
-                            onToggleApp = vm::setAppAllowed,
-                            onFinish = vm::completeSetup,
-                        )
-                    }
-                    true -> if (drawerOpen) {
-                        val installedApps by vm.installedApps.collectAsStateWithLifecycle()
-                        BackHandler { drawerOpen = false }
+                    AppScreen.Intro -> IntroScreen(onContinue = vm::completeIntro)
+
+                    AppScreen.Setup -> SetupScreen(
+                        state = state,
+                        installedApps = installedApps,
+                        onGrantUsageAccess = ::openUsageAccessSettings,
+                        onSetDefaultHome = { requestDefaultHome(roleLauncher) },
+                        onGrantAccessibility = ::openAccessibilitySettings,
+                        onToggleApp = vm::setAppAllowed,
+                        onFinish = vm::completeSetup,
+                    )
+
+                    AppScreen.Home -> HomeScreen(
+                        state = state,
+                        onGrantUsageAccess = ::openUsageAccessSettings,
+                        onLaunchApp = ::launchApp,
+                        onOpenDrawer = vm::openDrawer,
+                        loadIcon = vm::loadIcon,
+                    )
+
+                    AppScreen.Drawer -> {
+                        BackHandler { vm.closeDrawer() }
                         AppDrawerScreen(
                             installedApps = installedApps,
                             allowedPackages = state.allowedApps.mapTo(HashSet()) { it.packageName },
                             drawerLaunchesToday = state.drawerLaunchesToday,
                             onLaunchApp = { pkg ->
-                                drawerOpen = false
+                                vm.closeDrawer()
                                 launchApp(pkg)
                             },
                             onLaunchAfterChallenge = { pkg ->
+                                // ORDER MATTERS: mark the ledger before launching so the
+                                // foreground-change event the watcher sees next is for an
+                                // already-in-session package.
+                                vm.markFrictionPassed(pkg)
                                 vm.recordDrawerLaunch(pkg)
-                                drawerOpen = false
+                                vm.closeDrawer()
                                 launchApp(pkg)
                             },
                             loadIcon = vm::loadIcon,
@@ -92,18 +114,48 @@ class MainActivity : ComponentActivity() {
                             onAddAppFriction = vm::addAppFriction,
                             onRemoveAppFriction = vm::removeAppFriction,
                         )
-                    } else {
-                        HomeScreen(
-                            state = state,
-                            onGrantUsageAccess = ::openUsageAccessSettings,
-                            onLaunchApp = ::launchApp,
-                            onOpenDrawer = { drawerOpen = true },
-                            loadIcon = vm::loadIcon,
+                    }
+
+                    is AppScreen.Refriction -> {
+                        // Re-friction launched by FrictionWatchService when the user
+                        // returned to a friction-locked app via Recents. We render the
+                        // gate over our own launcher chrome; the target app keeps its
+                        // in-memory state behind us.
+                        val pkg = s.packageName
+                        val app = installedApps.firstOrNull { it.packageName == pkg }
+                            ?: AppEntry(pkg, pkg)
+                        BackHandler { vm.resolveRefriction() }
+                        FrictionGate(
+                            app = app,
+                            rules = state.appFriction[pkg].orEmpty(),
+                            drawerLaunchesToday = state.drawerLaunchesToday,
+                            tokenCount = tokensRequired(state.drawerLaunchesToday),
+                            onCancel = vm::resolveRefriction,
+                            onComplete = {
+                                vm.markFrictionPassed(pkg)
+                                launchApp(pkg)
+                                vm.resolveRefriction()
+                            },
                         )
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleTask: a new launch with EXTRA_REFRICTION_PACKAGE arrives here.
+        setIntent(intent)
+        consumeRefrictionExtra(intent)
+    }
+
+    /** Reads the re-friction extra and forwards it to the FSM if present. */
+    private fun consumeRefrictionExtra(intent: Intent?) {
+        val pkg = intent?.getStringExtra(EXTRA_REFRICTION_PACKAGE) ?: return
+        intent.removeExtra(EXTRA_REFRICTION_PACKAGE)
+        Log.d(TAG, "Re-friction requested for $pkg")
+        vm.requestRefriction(pkg)
     }
 
     /** Opens the system Usage Access screen so the user can grant PACKAGE_USAGE_STATS. */
@@ -113,6 +165,11 @@ class MainActivity : ComponentActivity() {
             data = Uri.fromParts("package", packageName, null)
         }
         startActivity(intent)
+    }
+
+    /** Opens the system Accessibility settings so the user can enable FrictionWatchService. */
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     /** Prompts the user to make NoImpulse the default home app. */
@@ -134,6 +191,14 @@ class MainActivity : ComponentActivity() {
     /** Launches an allowlisted app by package name. */
     private fun launchApp(packageName: String) {
         packageManager.getLaunchIntentForPackage(packageName)?.let(::startActivity)
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
+
+        /** Intent extra used by [com.glaikun.noimpulse.services.FrictionWatchService] to
+         *  request that the gate be re-shown for the named package. */
+        const val EXTRA_REFRICTION_PACKAGE = "com.glaikun.noimpulse.REFRICTION_PACKAGE"
     }
 }
 

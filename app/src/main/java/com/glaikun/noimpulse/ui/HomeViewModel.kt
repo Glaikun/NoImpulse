@@ -12,7 +12,9 @@ import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.api.FrictionRule
 import com.glaikun.noimpulse.api.SettingsSnapshot
 import com.glaikun.noimpulse.api.StatusSnapshot
+import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.di.IoDispatcher
+import com.glaikun.noimpulse.interfaces.AccessibilityStatusSource
 import com.glaikun.noimpulse.interfaces.LauncherAppsSource
 import com.glaikun.noimpulse.interfaces.SettingsRepository
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
@@ -23,8 +25,10 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -33,6 +37,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -47,6 +52,8 @@ class HomeViewModel @Inject constructor(
     private val usageStats: UsageStatsSource,
     private val launcher: LauncherAppsSource,
     private val settings: SettingsRepository,
+    private val accessibility: AccessibilityStatusSource,
+    private val frictionLedger: FrictionSessionLedger,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : AndroidViewModel(app) {
 
@@ -54,9 +61,10 @@ class HomeViewModel @Inject constructor(
         val time: String = "",
         val date: String = "",
         val batteryPercent: Int = -1,
-        val setupComplete: Boolean? = null,  // null = still loading from DataStore
+        val setupComplete: Boolean = false,
         val usageAccessGranted: Boolean = false,
         val isDefaultHome: Boolean = false,
+        val accessibilityGranted: Boolean = false,
         val pickupCount: Int? = null,        // null = usage access not granted
         val screenOnMinutes: Int? = null,
         val allowedApps: List<AppEntry> = emptyList(),
@@ -64,6 +72,36 @@ class HomeViewModel @Inject constructor(
         val appFriction: Map<String, List<FrictionRule>> = emptyMap(),
         val drawerLaunchesToday: Int = 0,
     )
+
+    // ── Routing state machine ────────────────────────────────────────────────
+
+    private val _screen = MutableStateFlow<AppScreen>(AppScreen.Loading)
+    val screen: StateFlow<AppScreen> = _screen.asStateFlow()
+
+    /** True once we've consumed the first DataStore emission and left Loading. */
+    @Volatile private var bootstrapped = false
+
+    private fun dispatch(event: AppEvent) {
+        _screen.update { nextScreen(it, event) }
+    }
+
+    fun completeIntro() {
+        viewModelScope.launch {
+            settings.setIntroSeen(true)
+            dispatch(AppEvent.IntroAcknowledged)
+        }
+    }
+
+    fun openDrawer() = dispatch(AppEvent.OpenDrawer)
+    fun closeDrawer() = dispatch(AppEvent.CloseDrawer)
+    fun requestRefriction(packageName: String) =
+        dispatch(AppEvent.RefrictionRequested(packageName))
+    fun resolveRefriction() = dispatch(AppEvent.RefrictionResolved)
+
+    /** Synchronous; must run before the target app is launched. */
+    fun markFrictionPassed(packageName: String) {
+        frictionLedger.markPassed(packageName)
+    }
 
     /** Fires an immediate status re-read (seeded so the first subscriber loads at once). */
     private val statusRefresh = MutableSharedFlow<Unit>(
@@ -89,6 +127,17 @@ class HomeViewModel @Inject constructor(
             settingsSnapshots(),
             homeApps(),
         ) { _, battery, status, settingsSnap, homeApps ->
+            // First settings emission boots the FSM out of Loading. Subsequent
+            // emissions only update display data — they don't rewind navigation.
+            if (!bootstrapped) {
+                bootstrapped = true
+                dispatch(
+                    AppEvent.SettingsLoaded(
+                        introSeen = settingsSnap.introSeen,
+                        setupComplete = settingsSnap.setupComplete,
+                    ),
+                )
+            }
             UiState(
                 time = formatTime(),
                 date = formatDate(),
@@ -96,6 +145,7 @@ class HomeViewModel @Inject constructor(
                 setupComplete = settingsSnap.setupComplete,
                 usageAccessGranted = status.usageGranted,
                 isDefaultHome = status.isDefaultHome,
+                accessibilityGranted = status.accessibilityGranted,
                 pickupCount = status.usage?.pickupCount,
                 screenOnMinutes = status.usage?.screenOnMinutes,
                 allowedApps = settingsSnap.allowedApps,
@@ -140,7 +190,10 @@ class HomeViewModel @Inject constructor(
         launcher.loadIcon(packageName)
 
     fun completeSetup() {
-        viewModelScope.launch { settings.setSetupComplete(true) }
+        viewModelScope.launch {
+            settings.setSetupComplete(true)
+            dispatch(AppEvent.SetupFinished)
+        }
     }
 
     fun setAppAllowed(packageName: String, allowed: Boolean) {
@@ -224,22 +277,32 @@ class HomeViewModel @Inject constructor(
         combine(
             merge(statusRefresh, statusPollTicks())
                 .map {
-                    Triple(
-                        usageStats.hasUsageAccess(),
-                        launcher.isDefaultHome(),
-                        usageStats.queryToday(),
+                    StatusReadings(
+                        usageGranted = usageStats.hasUsageAccess(),
+                        isDefaultHome = launcher.isDefaultHome(),
+                        accessibilityGranted = accessibility.isFrictionWatchEnabled(),
+                        usage = usageStats.queryToday(),
                     )
                 }
                 .flowOn(ioDispatcher),
             settings.drawerLaunchesToday,
-        ) { (granted, isDefault, usage), drawerCount ->
+        ) { readings, drawerCount ->
             StatusSnapshot(
-                usageGranted = granted,
-                isDefaultHome = isDefault,
-                usage = usage,
+                usageGranted = readings.usageGranted,
+                isDefaultHome = readings.isDefaultHome,
+                accessibilityGranted = readings.accessibilityGranted,
+                usage = readings.usage,
                 drawerLaunchesToday = drawerCount,
             )
         }
+
+    /** Internal bundle so we can carry four fields out of a single IO read. */
+    private data class StatusReadings(
+        val usageGranted: Boolean,
+        val isDefaultHome: Boolean,
+        val accessibilityGranted: Boolean,
+        val usage: com.glaikun.noimpulse.api.DailyUsage?,
+    )
 
     private fun statusPollTicks(): Flow<Unit> = flow {
         while (true) {
@@ -258,11 +321,13 @@ class HomeViewModel @Inject constructor(
     /** Resolves the persisted allowlist (package names) into displayable [AppEntry]s. */
     private fun settingsSnapshots(): Flow<SettingsSnapshot> =
         combine(
+            settings.introSeen,
             settings.setupComplete,
             settings.allowedPackages,
             settings.appFriction,
-        ) { complete, pkgs, friction ->
+        ) { introSeen, complete, pkgs, friction ->
             SettingsSnapshot(
+                introSeen = introSeen,
                 setupComplete = complete,
                 allowedApps = pkgs.mapNotNull { launcher.appEntryFor(it) }
                     .sortedBy { it.label.lowercase() },

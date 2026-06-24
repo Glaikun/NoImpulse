@@ -5,6 +5,8 @@ import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.api.DailyUsage
 import com.glaikun.noimpulse.api.FrictionRule
 import com.glaikun.noimpulse.api.FrictionType
+import com.glaikun.noimpulse.data.FrictionSessionLedger
+import com.glaikun.noimpulse.interfaces.AccessibilityStatusSource
 import com.glaikun.noimpulse.interfaces.LauncherAppsSource
 import com.glaikun.noimpulse.interfaces.SettingsRepository
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
@@ -12,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -58,12 +61,15 @@ class HomeViewModelTest {
         usage: DailyUsage?,
         launcher: LauncherAppsSource = FakeLauncherAppsSource(),
         settings: SettingsRepository = FakeSettingsRepository(setupComplete = true),
+        accessibility: AccessibilityStatusSource = FakeAccessibilityStatusSource(),
     ): HomeViewModel {
         val vm = HomeViewModel(
             app = ApplicationProvider.getApplicationContext(),
             usageStats = FakeUsageStatsSource(usage),
             launcher = launcher,
             settings = settings,
+            accessibility = accessibility,
+            frictionLedger = FrictionSessionLedger(),
             ioDispatcher = StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch { vm.state.collect {} }
@@ -149,6 +155,8 @@ class HomeViewModelTest {
             usageStats = source,
             launcher = FakeLauncherAppsSource(),
             settings = FakeSettingsRepository(setupComplete = true),
+            accessibility = FakeAccessibilityStatusSource(),
+            frictionLedger = FrictionSessionLedger(),
             ioDispatcher = StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch { vm.state.collect {} }
@@ -293,6 +301,8 @@ class HomeViewModelTest {
             usageStats = usage,
             launcher = launcher,
             settings = FakeSettingsRepository(setupComplete = true),
+            accessibility = FakeAccessibilityStatusSource(),
+            frictionLedger = FrictionSessionLedger(),
             ioDispatcher = StandardTestDispatcher(testScheduler),
         )
         backgroundScope.launch { vm.installedApps.collect {} }
@@ -374,18 +384,161 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `initial state is loading with empty time and null setupComplete`() {
+    fun `initial state has empty time and screen Loading before settings emit`() {
         // With no collector the WhileSubscribed flow is idle, so state holds defaults.
         val vm = HomeViewModel(
             app = ApplicationProvider.getApplicationContext(),
             usageStats = FakeUsageStatsSource(DailyUsage(1, 10)),
             launcher = FakeLauncherAppsSource(),
             settings = FakeSettingsRepository(setupComplete = true),
+            accessibility = FakeAccessibilityStatusSource(),
+            frictionLedger = FrictionSessionLedger(),
             ioDispatcher = testDispatcher,
         )
         assertEquals("", vm.state.value.time)
         assertNull(vm.state.value.pickupCount)
-        assertNull(vm.state.value.setupComplete)   // null = still loading
+        assertEquals(AppScreen.Loading, vm.screen.value)
+    }
+
+    // ── FSM bootstrap (Loading → first DataStore emission) ────────────────────
+
+    @Test
+    fun `fresh install boots to Intro screen`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = false, setupComplete = false),
+        )
+        assertEquals(AppScreen.Intro, vm.screen.value)
+    }
+
+    @Test
+    fun `intro acknowledged but setup incomplete boots to Setup`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = false),
+        )
+        assertEquals(AppScreen.Setup, vm.screen.value)
+    }
+
+    @Test
+    fun `intro and setup both done boots to Home`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+        )
+        assertEquals(AppScreen.Home, vm.screen.value)
+    }
+
+    // ── FSM transitions ──────────────────────────────────────────────────────
+
+    @Test
+    fun `completeIntro persists introSeen and moves screen to Setup`() = runTest {
+        val settings = FakeSettingsRepository(introSeen = false, setupComplete = false)
+        val vm = activeViewModel(usage = null, settings = settings)
+        assertEquals(AppScreen.Intro, vm.screen.value)
+
+        vm.completeIntro()
+        runCurrent()
+
+        assertTrue(settings.introSeen.first())
+        assertEquals(AppScreen.Setup, vm.screen.value)
+    }
+
+    @Test
+    fun `completeSetup persists setupComplete and moves screen to Home`() = runTest {
+        val settings = FakeSettingsRepository(introSeen = true, setupComplete = false)
+        val vm = activeViewModel(usage = null, settings = settings)
+        assertEquals(AppScreen.Setup, vm.screen.value)
+
+        vm.completeSetup()
+        runCurrent()
+
+        assertTrue(settings.setupComplete.first())
+        assertEquals(AppScreen.Home, vm.screen.value)
+    }
+
+    @Test
+    fun `openDrawer from Home moves screen to Drawer`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+        )
+        assertEquals(AppScreen.Home, vm.screen.value)
+
+        vm.openDrawer()
+        assertEquals(AppScreen.Drawer, vm.screen.value)
+    }
+
+    @Test
+    fun `closeDrawer from Drawer returns to Home`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+        )
+        vm.openDrawer()
+        assertEquals(AppScreen.Drawer, vm.screen.value)
+
+        vm.closeDrawer()
+        assertEquals(AppScreen.Home, vm.screen.value)
+    }
+
+    @Test
+    fun `requestRefriction moves screen to Refriction with package`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+        )
+
+        vm.requestRefriction("com.twitter.android")
+
+        assertEquals(AppScreen.Refriction("com.twitter.android"), vm.screen.value)
+    }
+
+    @Test
+    fun `resolveRefriction returns screen to Home`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+        )
+        vm.requestRefriction("com.twitter.android")
+        assertEquals(AppScreen.Refriction("com.twitter.android"), vm.screen.value)
+
+        vm.resolveRefriction()
+
+        assertEquals(AppScreen.Home, vm.screen.value)
+    }
+
+    // ── Friction session ledger wiring ──────────────────────────────────────
+
+    @Test
+    fun `markFrictionPassed delegates to the injected ledger synchronously`() = runTest {
+        val ledger = FrictionSessionLedger()
+        val vm = HomeViewModel(
+            app = ApplicationProvider.getApplicationContext(),
+            usageStats = FakeUsageStatsSource(null),
+            launcher = FakeLauncherAppsSource(),
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+            accessibility = FakeAccessibilityStatusSource(),
+            frictionLedger = ledger,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        backgroundScope.launch { vm.state.collect {} }
+        runCurrent()
+
+        assertFalse(ledger.isInSession("com.twitter.android"))
+        vm.markFrictionPassed("com.twitter.android")
+        // No runCurrent() — must be synchronous so the foreground change after
+        // launching the app sees an in-session package.
+        assertTrue(ledger.isInSession("com.twitter.android"))
+    }
+
+    @Test
+    fun `accessibilityGranted reflects status source`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            accessibility = FakeAccessibilityStatusSource(enabled = true),
+        )
+        assertTrue(vm.state.value.accessibilityGranted)
     }
 }
 
@@ -431,19 +584,26 @@ private class FakeLauncherAppsSource(
 }
 
 private class FakeSettingsRepository(
+    introSeen: Boolean = true,
     setupComplete: Boolean = false,
     allowed: Set<String> = emptySet(),
     drawerLaunches: Int = 0,
 ) : SettingsRepository {
+    private val _introSeen = MutableStateFlow(introSeen)
     private val _setupComplete = MutableStateFlow(setupComplete)
     private val _allowed = MutableStateFlow(allowed)
     private val _drawerLaunches = MutableStateFlow(drawerLaunches)
     private val _appFriction = MutableStateFlow<Map<String, List<FrictionRule>>>(emptyMap())
 
+    override val introSeen: Flow<Boolean> = _introSeen
     override val setupComplete: Flow<Boolean> = _setupComplete
     override val allowedPackages: Flow<Set<String>> = _allowed
     override val appFriction: Flow<Map<String, List<FrictionRule>>> = _appFriction
     override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
+
+    override suspend fun setIntroSeen(seen: Boolean) {
+        _introSeen.value = seen
+    }
 
     override suspend fun setSetupComplete(complete: Boolean) {
         _setupComplete.value = complete
@@ -471,4 +631,11 @@ private class FakeSettingsRepository(
     override suspend fun recordDrawerLaunch() {
         _drawerLaunches.value = _drawerLaunches.value + 1
     }
+}
+
+/** Test double for [AccessibilityStatusSource]. Defaults to "not granted". */
+private class FakeAccessibilityStatusSource(
+    @Volatile var enabled: Boolean = false,
+) : AccessibilityStatusSource {
+    override fun isFrictionWatchEnabled(): Boolean = enabled
 }

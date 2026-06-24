@@ -19,6 +19,9 @@ class DataStoreSettingsRepository @Inject constructor(
     private val dataStore: DataStore<Preferences>,
 ) : SettingsRepository {
 
+    override val introSeen: Flow<Boolean> =
+        dataStore.data.map { it[Keys.INTRO_SEEN] ?: false }
+
     override val setupComplete: Flow<Boolean> =
         dataStore.data.map { it[Keys.SETUP_COMPLETE] ?: false }
 
@@ -41,6 +44,10 @@ class DataStoreSettingsRepository @Inject constructor(
                 0
             }
         }
+
+    override suspend fun setIntroSeen(seen: Boolean) {
+        dataStore.edit { it[Keys.INTRO_SEEN] = seen }
+    }
 
     override suspend fun setSetupComplete(complete: Boolean) {
         dataStore.edit { it[Keys.SETUP_COMPLETE] = complete }
@@ -79,6 +86,7 @@ class DataStoreSettingsRepository @Inject constructor(
     }
 
     private object Keys {
+        val INTRO_SEEN = booleanPreferencesKey("intro_seen")
         val SETUP_COMPLETE = booleanPreferencesKey("setup_complete")
         val ALLOWED_PACKAGES = stringSetPreferencesKey("allowed_packages")
         val APP_FRICTION = stringSetPreferencesKey("app_friction")

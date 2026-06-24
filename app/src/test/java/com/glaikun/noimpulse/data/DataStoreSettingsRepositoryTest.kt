@@ -62,6 +62,26 @@ class DataStoreSettingsRepositoryTest {
     }
 
     @Test
+    fun `introSeen defaults to false`() = runTest {
+        assertFalse(newRepo().introSeen.first())
+    }
+
+    @Test
+    fun `setIntroSeen persists true`() = runTest {
+        val repo = newRepo()
+        repo.setIntroSeen(true)
+        assertTrue(repo.introSeen.first())
+    }
+
+    @Test
+    fun `introSeen and setupComplete are independent flags`() = runTest {
+        val repo = newRepo()
+        repo.setIntroSeen(true)
+        assertTrue(repo.introSeen.first())
+        assertFalse(repo.setupComplete.first())
+    }
+
+    @Test
     fun `allowedPackages defaults to empty`() = runTest {
         assertTrue(newRepo().allowedPackages.first().isEmpty())
     }

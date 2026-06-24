@@ -5,7 +5,9 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.glaikun.noimpulse.data.DataStoreSettingsRepository
+import com.glaikun.noimpulse.data.SystemAccessibilityStatusSource
 import com.glaikun.noimpulse.data.SystemLauncherAppsSource
+import com.glaikun.noimpulse.interfaces.AccessibilityStatusSource
 import com.glaikun.noimpulse.interfaces.LauncherAppsSource
 import com.glaikun.noimpulse.interfaces.SettingsRepository
 import com.glaikun.noimpulse.interfaces.UsageStatsSource
@@ -34,6 +36,11 @@ abstract class AppModule {
 
     @Binds
     abstract fun bindSettingsRepository(impl: DataStoreSettingsRepository): SettingsRepository
+
+    @Binds
+    abstract fun bindAccessibilityStatusSource(
+        impl: SystemAccessibilityStatusSource,
+    ): AccessibilityStatusSource
 
     companion object {
         @Provides

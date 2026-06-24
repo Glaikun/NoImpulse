@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.Flow
 
 /** On-device settings, backed by DataStore. Single source of truth for user prefs. */
 interface SettingsRepository {
+    /** Whether the user has acknowledged the pre-setup intro screen. */
+    val introSeen: Flow<Boolean>
+
     /** Whether first-run setup has been completed. */
     val setupComplete: Flow<Boolean>
 
@@ -20,6 +23,8 @@ interface SettingsRepository {
      * will atomically reset and record today's first launch.
      */
     val drawerLaunchesToday: Flow<Int>
+
+    suspend fun setIntroSeen(seen: Boolean)
 
     suspend fun setSetupComplete(complete: Boolean)
 

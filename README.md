@@ -7,6 +7,15 @@ have created when using their phone.
 - Control Website - No Porn, Social Media, or Games
 - White Lists Rather Than Black Lists
 
+## Privacy
+
+NoImpulse keeps everything on your device. Concretely:
+
+- **No `INTERNET` permission.** The `<uses-permission>` list in [`AndroidManifest.xml`](app/src/main/AndroidManifest.xml) does not declare it, so the OS would refuse any network attempt. This is independently verifiable by anyone inspecting the APK.
+- **No analytics, no remote config, no cloud sync.** The allowlist, friction rules, and counters live in on-device DataStore.
+- **The accessibility service is scoped to the package name of whatever app comes to the foreground.** It uses `canRetrieveWindowContent="false"` (see [`res/xml/accessibility_service_config.xml`](app/src/main/res/xml/accessibility_service_config.xml)), which means the OS itself withholds window content — we couldn't read messages, passwords, or anything you type even if we wanted to. The service is used for one thing: re-showing the friction screen when you return to an app you've added friction to.
+- **Source is the documentation.** Anything claimed here can be verified in this repo.
+
 ## Design
 
 ### Home Screen Design
@@ -62,15 +71,67 @@ This layer owns the data and is the single source of truth — the UI never read
 
 - **Async work** — Kotlin **coroutines** (`suspend` functions) instead of threads or `AsyncTask`. Long or deferrable jobs run on **WorkManager** so Android can batch them and survive reboots.
 - **Dependency injection** — **Hilt** wires repositories into `ViewModel`s and services. Same idea as Dagger/Guice in Java, just with less boilerplate.
-- **Blocking enforcement** — A foreground `AccessibilityService` does the real-time blocking; periodic chores (cleanup, roll-ups) are WorkManager workers.
-- **Privacy** — Everything stays on-device. No analytics, no remote config, no network calls for user data.
+ - **Blocking enforcement** — A foreground `AccessibilityService` ([`FrictionWatchService`](app/src/main/java/com/glaikun/noimpulse/services/FrictionWatchService.kt)) re-triggers friction when a tracked app returns to the foreground; periodic chores (cleanup, roll-ups) are WorkManager workers (planned).
+- **Privacy** — Everything stays on-device. See the [Privacy](#privacy) section above for the verifiable specifics.
 - **Testing** — Repositories and pure-Kotlin classes get JUnit tests. Compose screens are tested with `androidx.compose.ui.test`. Repository interfaces are swapped out for hand-written fakes in tests rather than mocking frameworks.
+---
+## Project structure
+
+Annotated tree of the production source. `[NEW]` rows were added in the foreground-re-friction / intro work.
+
+```
+app/src/main/java/com/glaikun/noimpulse/
+├── MainActivity.kt              — single-activity launcher; routes via a sealed AppScreen FSM (loading/intro/setup/home/drawer/re-friction)
+├── NoImpulseApp.kt              — @HiltAndroidApp application class
+├── api/                         — public data types shared between layers
+│   ├── AppEntry.kt              — (packageName, label) for an installed app
+│   ├── DailyUsage.kt            — pickup count + screen-on minutes for today
+│   ├── StatusSnapshot.kt        — system-status read (usage access, default-home, accessibility, usage stats)
+│   ├── SettingsSnapshot.kt      — persisted settings snapshot (intro flag, allowlist, friction map)
+│   └── Friction.kt              — FrictionType enum + FrictionRule data class
+├── data/                        — repositories and system data sources
+│   ├── DataStoreSettingsRepository.kt    — Jetpack DataStore-backed settings store
+│   ├── SystemLauncherAppsSource.kt       — PackageManager-backed installed-apps source
+│   ├── SystemAccessibilityStatusSource.kt — reads Settings.Secure to detect if our service is enabled  [NEW]
+│   └── FrictionSessionLedger.kt          — in-memory ledger of passed-friction apps (cleared on screen-off)  [NEW]
+├── di/                          — Hilt wiring
+│   ├── AppModule.kt             — binds interfaces to implementations
+│   └── IoDispatcher.kt          — @Qualifier for the IO-bound CoroutineDispatcher
+├── interfaces/                  — repository/source interfaces (so tests can use fakes)
+│   ├── SettingsRepository.kt
+│   ├── LauncherAppsSource.kt
+│   ├── UsageStatsSource.kt
+│   └── AccessibilityStatusSource.kt      — exposes "is our service enabled"  [NEW]
+├── services/
+│   └── FrictionWatchService.kt           — AccessibilityService; re-friction trigger + screen-off ledger reset  [NEW]
+└── ui/
+    ├── HomeScreen.kt            — clock/date/battery/stats + allowlisted-app grid
+    ├── AppDrawerScreen.kt       — swipe-up drawer; lists every installed app + friction options
+    ├── AppIcon.kt               — Composable that renders an app icon from a PackageManager Drawable
+    ├── SetupScreen.kt           — first-run permissions (usage / default home / accessibility) + allowlist seed
+    ├── IntroScreen.kt           — pre-setup explainer shown before SetupScreen  [NEW]
+    ├── Friction.kt              — friction-dialog Composables (timed wait, math, reflection, UUID gate)
+    ├── FrictionGate.kt          — shared "render the friction sequence for this app" Composable  [NEW]
+    ├── AppScreen.kt             — sealed AppScreen + AppEvent + pure nextScreen() transition function  [NEW]
+    ├── HomeViewModel.kt         — single ViewModel; exposes screen: StateFlow<AppScreen> and state: StateFlow<UiState>
+    ├── UsageStatsSource.kt      — UsageStatsManager wrapper (impl of the interface)
+    └── theme/                   — Material 3 colour, typography, theme
+
+app/src/main/res/xml/
+├── accessibility_service_config.xml  — declares which events FrictionWatchService receives  [NEW]
+├── backup_rules.xml
+└── data_extraction_rules.xml
+
+app/src/main/res/values/
+└── strings.xml                  — includes accessibility_service_description shown on the system consent screen
+```
+
 ---
 ## Plan
 
 A feature roadmap, ordered so each step builds on the previous one and teaches a chunk of Android along the way. Treat this as a learning path — not a fixed spec.
 
-**Status at a glance:** Phases 1–4 are live. Phase 5 (discouraging launcher swaps) is partially in place — `isDefaultHome` is re-checked on every `ON_RESUME`. Phases 6–7 are not started.
+**Status at a glance:** Phases 1–4 are live. Phase 5 (discouraging launcher swaps) is partially in place — `isDefaultHome` is re-checked on every `ON_RESUME`. Phase 6 (app drawer with escalating friction) is delivered. **Phase 6.5 (re-friction on foreground return)** is delivered — a pre-setup intro screen, an `AccessibilityService` that re-triggers friction when a tracked app comes back to the foreground, and a screen-off-based session ledger. Phase 7 (website blocking) is not started.
 
 ### Start here (before Phase 1)
 
@@ -213,11 +274,24 @@ The whole point is "make impulsive paths inconvenient, not impossible." A single
 
 ---
 
+### Phase 6.5 — Re-friction on foreground return
+
+**Status: delivered** — first observed bypass was "open Twitter via the drawer, pass friction, press home, switch back via Recents — no friction the second time, because the app is just resumed and the drawer never sees the launch." Fixed with three pieces:
+
+- A pre-setup [`IntroScreen`](app/src/main/java/com/glaikun/noimpulse/ui/IntroScreen.kt) explaining the launcher model, the deliberate friction, and the privacy posture (open source, no `INTERNET` permission, on-device only). Gated by a new `introSeen` flag in `SettingsRepository` so it shows once on a fresh install.
+- A foreground watcher [`FrictionWatchService`](app/src/main/java/com/glaikun/noimpulse/services/FrictionWatchService.kt) — an `AccessibilityService` subscribed only to `TYPE_WINDOW_STATE_CHANGED` with `canRetrieveWindowContent="false"`. When a non-allowlisted, friction-tracked package comes to the foreground and isn't "in session", it relaunches `MainActivity` with an `EXTRA_REFRICTION_PACKAGE` extra. The activity routes that extra through the FSM to render the friction gate over its launcher chrome.
+- An in-memory [`FrictionSessionLedger`](app/src/main/java/com/glaikun/noimpulse/data/FrictionSessionLedger.kt) — set of packages that have passed friction during the current screen-on session. Marked after each successful gate. A `BroadcastReceiver` for `ACTION_SCREEN_OFF` clears the ledger, so the next screen-on requires re-friction; process death also clears it.
+
+Routing is modelled as an explicit state machine ([`AppScreen.kt`](app/src/main/java/com/glaikun/noimpulse/ui/AppScreen.kt)) — sealed states + sealed events + a pure `nextScreen()` transition function — exposed as `StateFlow<AppScreen>` on the ViewModel. The Activity is one exhaustive `when (screen)`. The accessibility consent is softened by a pre-prompt dialog in `SetupScreen` plus a description string the system shows on its consent page.
+
+**Known v1 gap:** if the screen never turns off (phone set down face-up), the same Recents bypass can return because the ledger isn't cleared. Defer until shown to bite in real use; an idle-timer fallback is the obvious next step.
+
+---
 ### Phase 7 — Website blocking
 
 The biggest piece, deliberately last because `AccessibilityService` is fiddly.
 
-- Implement an `AccessibilityService` that watches browser events.
+- Implement an `AccessibilityService` that watches browser events. *(Note: the service file already exists from Phase 6.5; extending it to inspect URL bars requires flipping `canRetrieveWindowContent` to `true`, which is a meaningful trust change and will need its own pre-prompt copy.)*
 - Check the destination URL against a domain allowlist (a second Room table or a DataStore set).
 - If blocked, redirect the browser to a "blocked" page or back to the launcher.
 

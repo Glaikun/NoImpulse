@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Minimum-surface config for FrictionWatchService.
+
+  - accessibilityEventTypes="typeWindowStateChanged": the only event we need to
+    notice when a different app comes to the foreground. We do NOT subscribe to
+    text input, content changes, focus, scroll, or any view-tree events.
+  - canRetrieveWindowContent="false": the OS itself withholds window content
+    from us. We could not read messages, passwords, or screen text even if we
+    wanted to — the API doesn't deliver it.
+  - flagDefault (and no flagRetrieveInteractiveWindows): we don't inspect
+    inactive windows either.
+  - notificationTimeout="100": modest debounce; window changes can fire several
+    times during a transition.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="100" />

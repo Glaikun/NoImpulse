@@ -25,7 +25,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,7 +35,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,7 +47,6 @@ import com.glaikun.noimpulse.api.AppEntry
 import com.glaikun.noimpulse.api.FrictionRule
 import com.glaikun.noimpulse.api.FrictionType
 import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
-import java.util.UUID
 
 @Composable
 fun AppDrawerScreen(
@@ -74,7 +71,6 @@ fun AppDrawerScreen(
     // user rotates mid-dialog the dialog closes; acceptable for a launcher that rarely
     // rotates, and saves a wrapper class.
     var pendingApp by remember { mutableStateOf<AppEntry?>(null) }
-    var frictionStep by remember { mutableStateOf(0) }
     var sheetApp by remember { mutableStateOf<AppEntry?>(null) }
     var addGateApp by remember { mutableStateOf<AppEntry?>(null) }
     // The (app, rule) whose removal is awaiting the UUID gate.
@@ -125,7 +121,6 @@ fun AppDrawerScreen(
                             if (app.packageName in allowedPackages) {
                                 onLaunchApp(app.packageName)
                             } else {
-                                frictionStep = 0
                                 pendingApp = app
                             }
                         },
@@ -137,36 +132,20 @@ fun AppDrawerScreen(
     }
 
     pendingApp?.let { app ->
-        val onCancel = {
-            pendingApp = null
-            frictionStep = 0
-        }
-        val onComplete = {
-            pendingApp = null
-            frictionStep = 0
-            onLaunchAfterChallenge(app.packageName)
-        }
         // Friction applies only to non-allowlisted apps (allowlisted ones launch directly,
-        // above). Assigned rules are run in sequence and override the default token challenge;
-        // with none assigned the default daily-scaling token challenge is shown.
-        val rules = appFriction[app.packageName].orEmpty()
-        if (rules.isEmpty()) {
-            LaunchChallengeDialog(app, tokenCount, drawerLaunchesToday, onCancel, onComplete)
-        } else {
-            val step = frictionStep.coerceIn(rules.indices)
-            val advance = { if (step >= rules.lastIndex) onComplete() else frictionStep = step + 1 }
-            val rule = rules[step]
-            // key() gives each step fresh dialog state so duplicate friction types don't share it.
-            key(step) {
-                when (rule.type) {
-                    FrictionType.TOKENS ->
-                        LaunchChallengeDialog(app, rule.param.coerceAtLeast(1), drawerLaunchesToday, onCancel, advance)
-                    FrictionType.TIMED_WAIT -> TimedWaitDialog(app, rule.param, onCancel, advance)
-                    FrictionType.MATH -> MathChallengeDialog(app, onCancel, advance)
-                    FrictionType.REFLECTION -> ReflectionLaunchDialog(app, rule.param, onCancel, advance)
-                }
-            }
-        }
+        // above). FrictionGate iterates assigned rules in sequence, or falls back to the
+        // default daily-scaling token challenge when no rules are assigned.
+        FrictionGate(
+            app = app,
+            rules = appFriction[app.packageName].orEmpty(),
+            drawerLaunchesToday = drawerLaunchesToday,
+            tokenCount = tokenCount,
+            onCancel = { pendingApp = null },
+            onComplete = {
+                pendingApp = null
+                onLaunchAfterChallenge(app.packageName)
+            },
+        )
     }
 
     sheetApp?.let { app ->
@@ -379,80 +358,6 @@ private fun FrictionToggle(label: String, assigned: Boolean, onToggle: () -> Uni
         Spacer(Modifier.width(8.dp))
         Text(text = label, style = MaterialTheme.typography.bodyLarge)
     }
-}
-
-@Composable
-private fun LaunchChallengeDialog(
-    app: AppEntry,
-    tokenCount: Int,
-    drawerLaunchesToday: Int,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val tokens = rememberSaveable(
-        app.packageName, tokenCount,
-        saver = listSaver<List<String>, String>(save = { it.toList() }, restore = { it }),
-    ) { generateTokens(tokenCount) }
-    val expected = remember(tokens) { tokens.joinToString(" ") }
-    var typed by rememberSaveable(app.packageName) { mutableStateOf("") }
-    val matches = typed.trim().equals(expected, ignoreCase = true)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(app.label) },
-        text = {
-            Column {
-                Text(
-                    text = "Drawer launches today: $drawerLaunchesToday",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.testTag("drawerLaunchCount"),
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Type the tokens below to launch — each separated by a single space.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(Modifier.height(12.dp))
-                tokens.forEach { token ->
-                    Text(
-                        text = token,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = typed,
-                    onValueChange = { typed = it },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("challengeInput"),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                enabled = matches,
-                modifier = Modifier.testTag("challengeLaunch"),
-            ) { Text("Launch") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
-}
-
-/**
- * Generates [count] short hex tokens for the launch challenge. Not cryptographic — this
- * is typing friction. 6 chars is short enough to type without frustration but long
- * enough to feel deliberate.
- */
-internal fun generateTokens(count: Int): List<String> = List(count) {
-    UUID.randomUUID().toString().replace("-", "").take(6).uppercase()
 }
 
 @Preview(showBackground = true)
