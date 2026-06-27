@@ -21,9 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.glaikun.noimpulse.api.AppEntry
-import com.glaikun.noimpulse.api.FrictionRule
-import com.glaikun.noimpulse.api.FrictionType
+import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import java.util.UUID
 
 /**

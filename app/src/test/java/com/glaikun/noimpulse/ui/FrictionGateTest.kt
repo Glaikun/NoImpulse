@@ -1,7 +1,7 @@
 package com.glaikun.noimpulse.ui
 
-import com.glaikun.noimpulse.api.FrictionRule
-import com.glaikun.noimpulse.api.FrictionType
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.ui
+package com.glaikun.noimpulse.data
 
 import android.app.AppOpsManager
 import android.content.Context

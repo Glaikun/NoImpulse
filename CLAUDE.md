@@ -1,20 +1,24 @@
 # NoImpulse
 
-A free, open-source, on-device Android app that helps users avoid impulsive phone use. It is also a **custom home-screen launcher**: the user sets NoImpulse as their default launcher and can only reach apps they've explicitly allowlisted.
+A free, open-source, on-device Android app that helps users avoid impulsive phone use. It is also a **custom home-screen launcher**: the user sets NoImpulse as their default launcher and can only reach apps they've explicitly allowlisted; everything else sits behind deliberate friction. The app is public and GPL-3.0 licensed.
+
+## How to work in this codebase
+
+- **Readability is the top priority.** Code is read far more than it is written, and this is a learning project as much as a product. Prefer the clear, obvious solution over the clever one. Match the naming, comment density, and idioms of the surrounding code. A comment should explain *why*, not restate *what*. If a choice needs justification, leave a short note rather than assuming the next reader will reconstruct it.
 
 ## Product constraints (non-negotiable)
 
 - **Allowlists only, never blocklists.** Apps and websites the user wants access to must be opted in.
-- **All data stays on-device.** No analytics, no remote config, no network calls for user state.
+- **All data stays on-device.** No analytics, no remote config, no network calls for user state. The app declares no `INTERNET` permission — keep it that way.
 - **Friction over restriction.** Android won't let an app fully prevent the user from changing the default launcher; the app's job is to make impulsive paths inconvenient, not impossible.
 
 ## Architecture (per [Google's recommendations](https://developer.android.com/topic/architecture/recommendations))
 
 Two layers, unidirectional data flow:
 
-- **UI** — Jetpack Compose + Material 3. `ViewModel` exposes immutable state as `StateFlow`; UI collects via `collectAsStateWithLifecycle()`.
-- **Data** — Repositories are the single source of truth. Room for allowlists/history, Jetpack DataStore for settings (not `SharedPreferences`).
-- **Cross-cutting** — Hilt for DI, Kotlin coroutines + `Flow` for async (no `LiveData`, no RxJava, no `AsyncTask`), WorkManager for deferrable work, `AccessibilityService` for real-time blocking.
+- **UI** — Jetpack Compose + Material 3. A single `ViewModel` exposes immutable state as `StateFlow`; UI collects via `collectAsStateWithLifecycle()`. Composables are grouped by role: screen destinations in `ui/screens/`, the app drawer in `ui/drawer/`, and the shared `ViewModel`/navigation/friction Composables in the `ui` root.
+- **Data** — Repositories and sources are the single source of truth. Each interface lives beside its implementation in `data/`; the plain data types they exchange live in `model/`. Room for allowlists/history (planned), Jetpack DataStore for settings (not `SharedPreferences`).
+- **Cross-cutting** — Hilt for DI, Kotlin coroutines + `Flow` for async (no `LiveData`, no RxJava, no `AsyncTask`), WorkManager for deferrable work (planned), `AccessibilityService` (`FrictionWatchService`) for re-friction when a tracked app returns to the foreground.
 
 Single `:app` module today. Tests use hand-written fakes, not mocking frameworks.
 
@@ -29,9 +33,12 @@ Single `:app` module today. Tests use hand-written fakes, not mocking frameworks
 
 - XML layouts — Compose only.
 - `SharedPreferences`, `LiveData`, RxJava, `AsyncTask` — superseded by the choices above.
-- Mockito or other mocking frameworks for repository tests — fakes instead.
-- Network calls or third-party SDKs that touch user data.
+- Mockito or other mocking frameworks for repository tests — hand-written fakes instead.
+- Network calls, analytics, or third-party SDKs that touch user data — the app has no `INTERNET` permission.
+- Blocklists — allowlists only (see Product constraints).
+- Packages organised by language construct (e.g. an `interfaces/` package). Group by layer or feature, and keep each interface next to its implementation in `data/`.
+- Clever code at the expense of clarity — readability wins.
 
-## Roadmap
+## Ideas / roadmap
 
-See the `## Plan` section of [README.md](README.md) for the phased feature roadmap and per-phase doc links.
+See the `## Ideas` section of [README.md](README.md) for the current status and the backlog of future work.

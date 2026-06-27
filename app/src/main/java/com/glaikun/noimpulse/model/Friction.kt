@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.api
+package com.glaikun.noimpulse.model
 
 /** The kinds of friction a user can assign to opening a non-allowlisted app. */
 enum class FrictionType { TIMED_WAIT, TOKENS, MATH, REFLECTION }

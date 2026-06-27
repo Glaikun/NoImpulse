@@ -1,6 +1,6 @@
-package com.glaikun.noimpulse.interfaces
+package com.glaikun.noimpulse.data
 
-import com.glaikun.noimpulse.api.DailyUsage
+import com.glaikun.noimpulse.model.DailyUsage
 
 interface UsageStatsSource {
     /** True when the user has granted Usage Access (PACKAGE_USAGE_STATS). */

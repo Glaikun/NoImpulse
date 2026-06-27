@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.interfaces
+package com.glaikun.noimpulse.data
 
 /**
  * Read-only view of whether NoImpulse's [com.glaikun.noimpulse.services.FrictionWatchService]

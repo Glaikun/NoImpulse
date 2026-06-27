@@ -11,8 +11,8 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.glaikun.noimpulse.MainActivity
 import com.glaikun.noimpulse.data.FrictionSessionLedger
-import com.glaikun.noimpulse.interfaces.LauncherAppsSource
-import com.glaikun.noimpulse.interfaces.SettingsRepository
+import com.glaikun.noimpulse.data.LauncherAppsSource
+import com.glaikun.noimpulse.data.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.api
+package com.glaikun.noimpulse.model
 
 data class StatusSnapshot(
     val usageGranted: Boolean,

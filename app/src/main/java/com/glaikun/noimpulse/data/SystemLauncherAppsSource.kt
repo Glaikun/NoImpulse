@@ -11,8 +11,7 @@ import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.provider.Telephony
-import com.glaikun.noimpulse.api.AppEntry
-import com.glaikun.noimpulse.interfaces.LauncherAppsSource
+import com.glaikun.noimpulse.model.AppEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 

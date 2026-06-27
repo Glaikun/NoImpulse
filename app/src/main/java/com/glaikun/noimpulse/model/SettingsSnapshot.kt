@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.api
+package com.glaikun.noimpulse.model
 
 data class SettingsSnapshot(
     val introSeen: Boolean,

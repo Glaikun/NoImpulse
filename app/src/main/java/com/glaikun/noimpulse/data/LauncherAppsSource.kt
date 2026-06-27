@@ -1,6 +1,6 @@
-package com.glaikun.noimpulse.interfaces
+package com.glaikun.noimpulse.data
 
-import com.glaikun.noimpulse.api.AppEntry
+import com.glaikun.noimpulse.model.AppEntry
 
 /** Read-only view of the device's launchable apps and home-launcher status. */
 interface LauncherAppsSource {

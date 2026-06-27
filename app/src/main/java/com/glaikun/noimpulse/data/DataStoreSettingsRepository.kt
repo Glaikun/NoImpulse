@@ -7,9 +7,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import com.glaikun.noimpulse.api.FrictionRule
-import com.glaikun.noimpulse.api.FrictionType
-import com.glaikun.noimpulse.interfaces.SettingsRepository
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate

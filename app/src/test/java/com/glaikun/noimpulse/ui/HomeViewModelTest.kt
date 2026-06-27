@@ -1,15 +1,15 @@
 package com.glaikun.noimpulse.ui
 
 import androidx.test.core.app.ApplicationProvider
-import com.glaikun.noimpulse.api.AppEntry
-import com.glaikun.noimpulse.api.DailyUsage
-import com.glaikun.noimpulse.api.FrictionRule
-import com.glaikun.noimpulse.api.FrictionType
+import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.DailyUsage
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import com.glaikun.noimpulse.data.FrictionSessionLedger
-import com.glaikun.noimpulse.interfaces.AccessibilityStatusSource
-import com.glaikun.noimpulse.interfaces.LauncherAppsSource
-import com.glaikun.noimpulse.interfaces.SettingsRepository
-import com.glaikun.noimpulse.interfaces.UsageStatsSource
+import com.glaikun.noimpulse.data.AccessibilityStatusSource
+import com.glaikun.noimpulse.data.LauncherAppsSource
+import com.glaikun.noimpulse.data.SettingsRepository
+import com.glaikun.noimpulse.data.UsageStatsSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow

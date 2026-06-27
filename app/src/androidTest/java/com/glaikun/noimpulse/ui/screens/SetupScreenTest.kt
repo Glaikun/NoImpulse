@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.ui
+package com.glaikun.noimpulse.ui.screens
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -8,7 +8,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.glaikun.noimpulse.api.AppEntry
+import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.ui.HomeViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

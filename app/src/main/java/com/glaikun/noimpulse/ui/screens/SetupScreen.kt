@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.ui
+package com.glaikun.noimpulse.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.glaikun.noimpulse.api.AppEntry
+import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.ui.HomeViewModel
 import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
 
 @Composable

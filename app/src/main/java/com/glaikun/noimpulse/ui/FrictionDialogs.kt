@@ -25,7 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.glaikun.noimpulse.api.AppEntry
+import com.glaikun.noimpulse.model.AppEntry
 import kotlinx.coroutines.delay
 import java.util.UUID
 

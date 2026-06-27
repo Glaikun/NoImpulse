@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.ui
+package com.glaikun.noimpulse.ui.drawer
 
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -48,9 +48,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.glaikun.noimpulse.api.AppEntry
-import com.glaikun.noimpulse.api.FrictionRule
-import com.glaikun.noimpulse.api.FrictionType
+import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
+import com.glaikun.noimpulse.ui.AddToAllowlistDialog
+import com.glaikun.noimpulse.ui.AppIcon
+import com.glaikun.noimpulse.ui.FrictionGate
+import com.glaikun.noimpulse.ui.UuidChallengeDialog
+import com.glaikun.noimpulse.ui.tokensRequired
 import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
 
 @Composable

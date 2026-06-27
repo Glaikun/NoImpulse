@@ -1,6 +1,6 @@
-package com.glaikun.noimpulse.interfaces
+package com.glaikun.noimpulse.data
 
-import com.glaikun.noimpulse.api.FrictionRule
+import com.glaikun.noimpulse.model.FrictionRule
 import kotlinx.coroutines.flow.Flow
 
 /** On-device settings, backed by DataStore. Single source of truth for user prefs. */

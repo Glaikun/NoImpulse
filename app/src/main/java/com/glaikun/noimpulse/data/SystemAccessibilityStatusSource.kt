@@ -3,7 +3,6 @@ package com.glaikun.noimpulse.data
 import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
-import com.glaikun.noimpulse.interfaces.AccessibilityStatusSource
 import com.glaikun.noimpulse.services.FrictionWatchService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject

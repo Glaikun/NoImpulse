@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.ui
+package com.glaikun.noimpulse.ui.screens
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule

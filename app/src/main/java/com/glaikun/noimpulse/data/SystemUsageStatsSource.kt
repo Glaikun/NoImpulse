@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.ui
+package com.glaikun.noimpulse.data
 
 import android.app.AppOpsManager
 import android.app.usage.UsageEvents
@@ -6,8 +6,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
-import com.glaikun.noimpulse.api.DailyUsage
-import com.glaikun.noimpulse.interfaces.UsageStatsSource
+import com.glaikun.noimpulse.model.DailyUsage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.LocalDate
 import java.time.ZoneId

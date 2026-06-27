@@ -8,16 +8,16 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.glaikun.noimpulse.api.AppEntry
-import com.glaikun.noimpulse.api.FrictionRule
-import com.glaikun.noimpulse.api.SettingsSnapshot
-import com.glaikun.noimpulse.api.StatusSnapshot
+import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.SettingsSnapshot
+import com.glaikun.noimpulse.model.StatusSnapshot
 import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.di.IoDispatcher
-import com.glaikun.noimpulse.interfaces.AccessibilityStatusSource
-import com.glaikun.noimpulse.interfaces.LauncherAppsSource
-import com.glaikun.noimpulse.interfaces.SettingsRepository
-import com.glaikun.noimpulse.interfaces.UsageStatsSource
+import com.glaikun.noimpulse.data.AccessibilityStatusSource
+import com.glaikun.noimpulse.data.LauncherAppsSource
+import com.glaikun.noimpulse.data.SettingsRepository
+import com.glaikun.noimpulse.data.UsageStatsSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
@@ -301,7 +301,7 @@ class HomeViewModel @Inject constructor(
         val usageGranted: Boolean,
         val isDefaultHome: Boolean,
         val accessibilityGranted: Boolean,
-        val usage: com.glaikun.noimpulse.api.DailyUsage?,
+        val usage: com.glaikun.noimpulse.model.DailyUsage?,
     )
 
     private fun statusPollTicks(): Flow<Unit> = flow {

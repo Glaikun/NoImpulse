@@ -1,4 +1,4 @@
-package com.glaikun.noimpulse.ui
+package com.glaikun.noimpulse.ui.screens
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -24,7 +24,7 @@ import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
 
 /**
  * Pre-setup explainer. Shown once on a fresh install (gated by `introSeen` in
- * [com.glaikun.noimpulse.interfaces.SettingsRepository]); never again unless the
+ * [com.glaikun.noimpulse.data.SettingsRepository]); never again unless the
  * user wipes data.
  *
  * The trust statement near the bottom (open source, no network) lands here on
