@@ -38,7 +38,7 @@ class FrictionTest {
 
     @Test
     fun `reflection bank has a mix of yes and no answers`() {
-        assertTrue(reflectionBank.any { it.answer })
-        assertTrue(reflectionBank.any { !it.answer })
+        assertTrue(reflectionBank.any { it.answer == true })
+        assertTrue(reflectionBank.any { it.answer == false })
     }
 }

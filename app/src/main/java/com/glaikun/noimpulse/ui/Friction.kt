@@ -32,7 +32,7 @@ import java.util.UUID
 // ── Reflection questions ─────────────────────────────────────────────────────
 
 /** A reflection prompt with the [answer] the user must select to proceed. */
-internal data class ReflectionQuestion(val text: String, val answer: Boolean)
+internal data class ReflectionQuestion(val text: String, val answer: Boolean?)
 
 /**
  * Starter bank of reflection prompts with designated (mixed) correct answers. This is
@@ -41,14 +41,12 @@ internal data class ReflectionQuestion(val text: String, val answer: Boolean)
  */
 internal val reflectionBank: List<ReflectionQuestion> = listOf(
     ReflectionQuestion("Are you trying to reduce impulsive phone use?", true),
-    ReflectionQuestion("Are you adding this app for a deliberate reason?", true),
-    ReflectionQuestion("Could this app pull you into mindless scrolling?", true),
-    ReflectionQuestion("Is now a good time to make your phone more tempting?", false),
+    ReflectionQuestion("Could this app pull you into mindless scrolling?", null),
+    ReflectionQuestion("Is now a good time to make your phone more tempting?", null),
     ReflectionQuestion("Are you adding this on impulse right now?", false),
     ReflectionQuestion("Do you want to spend less time on your phone overall?", true),
-    ReflectionQuestion("Are you feeling bored or anxious at this moment?", false),
     ReflectionQuestion("Is this choice aligned with your real intentions?", true),
-    ReflectionQuestion("Would a less distracting alternative work instead?", false),
+    ReflectionQuestion("Would a less distracting alternative work instead?", null),
     ReflectionQuestion("Have you paused to think this through?", true),
 )
 
@@ -60,7 +58,9 @@ internal fun pickReflectionQuestions(count: Int): List<ReflectionQuestion> =
 internal fun reflectionsAllCorrect(
     questions: List<ReflectionQuestion>,
     answers: Map<Int, Boolean>,
-): Boolean = questions.indices.all { answers[it] == questions[it].answer }
+): Boolean = questions.indices.all {
+    questions[it].answer == null || answers[it] == questions[it].answer
+}
 
 // ── Math problems ────────────────────────────────────────────────────────────
 

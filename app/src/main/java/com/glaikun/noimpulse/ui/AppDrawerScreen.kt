@@ -1,5 +1,6 @@
 package com.glaikun.noimpulse.ui
 
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -19,10 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
@@ -55,7 +60,7 @@ fun AppDrawerScreen(
     drawerLaunchesToday: Int,
     onLaunchApp: (String) -> Unit = {},
     onLaunchAfterChallenge: (String) -> Unit = {},
-    loadIcon: (String) -> android.graphics.drawable.Drawable? = { null },
+    loadIcon: (String) -> Drawable? = { null },
     appFriction: Map<String, List<FrictionRule>> = emptyMap(),
     onSetAppAllowed: (String, Boolean) -> Unit = { _, _ -> },
     onAddAppFriction: (String, FrictionRule) -> Unit = { _, _ -> },
@@ -88,11 +93,24 @@ fun AppDrawerScreen(
                 .padding(WindowInsets.safeDrawing.asPaddingValues())
                 .padding(horizontal = 24.dp),
         ) {
-            Text(
-                text = "All apps",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(top = 24.dp, bottom = 16.dp),
-            )
+            Row (
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 24.dp, bottom = 12.dp)
+            ) {
+                Text(
+                    text = "All apps",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.weight(1f)
+                )
+//                IconButton(
+//                    onClick = {}
+//                ) {
+//                    Icon(
+//                        Icons.Filled.Settings,
+//                        contentDescription = "settings")
+//                }
+            }
+
 
             TextField(
                 value = filterText,
@@ -225,7 +243,7 @@ fun AppDrawerScreen(
 @Composable
 private fun DrawerAppItem(
     app: AppEntry,
-    loadIcon: (String) -> android.graphics.drawable.Drawable?,
+    loadIcon: (String) -> Drawable?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -263,7 +281,6 @@ private fun AppOptionsSheet(
     val timerDurations = listOf(10, 30, 60)
     val currentTimer = currentFrictions.firstOrNull { it.type == FrictionType.TIMED_WAIT }
     val stackableOptions = listOf(
-        "Type tokens" to FrictionRule(FrictionType.TOKENS, 3),
         "Math problem" to FrictionRule(FrictionType.MATH, 1),
         "Reflection questions" to FrictionRule(FrictionType.REFLECTION, 3),
     )
@@ -294,10 +311,10 @@ private fun AppOptionsSheet(
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
 
-            Text(text = "Make harder to open", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Add extra friction", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "Stack as many as you like. Removing one requires a code. " +
-                    "Applies when this app isn't allowlisted.",
+                text = "A token challenge already applies whenever this app isn't " +
+                    "allowlisted. Add more below to stack on top. Removing one requires a code.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

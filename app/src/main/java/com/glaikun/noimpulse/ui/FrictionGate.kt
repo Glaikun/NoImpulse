@@ -29,12 +29,11 @@ import java.util.UUID
 /**
  * Renders the configured friction dialog(s) for [app] and reports the result.
  *
- * Two modes:
- *  - With no [rules] assigned, falls back to the default daily-scaling token challenge
- *    (the same one the drawer has always shown). [tokenCount] decides how many tokens
- *    must be typed; [drawerLaunchesToday] is shown as context.
- *  - With one or more [rules], runs them in sequence — each step gets fresh state via
- *    [key] so duplicate rule types (e.g. two MATH steps) don't share inputs.
+ * The default daily-scaling token challenge always runs first as an unconditional baseline
+ * ([tokenCount] decides how many tokens must be typed; [drawerLaunchesToday] is shown as
+ * context). Any assigned [rules] then stack on top of it and run in sequence — each step
+ * gets fresh state via [key] so duplicate rule types (e.g. two MATH steps) don't share
+ * inputs. With no rules assigned, only the baseline token challenge runs.
  *
  * The same Composable is reused by [AppDrawerScreen] (first launch from the drawer)
  * and by `MainActivity` (re-friction triggered by the accessibility service).
@@ -48,17 +47,16 @@ fun FrictionGate(
     onCancel: () -> Unit,
     onComplete: () -> Unit,
 ) {
-    if (rules.isEmpty()) {
-        LaunchChallengeDialog(app, tokenCount, drawerLaunchesToday, onCancel, onComplete)
-        return
-    }
-
-    var step by remember(app.packageName, rules) { mutableStateOf(0) }
-    val current = step.coerceIn(rules.indices)
+    // The default daily-scaling token challenge always runs first as a baseline; any
+    // assigned rules simply stack after it. Building one sequence lets us run every step
+    // through the same loop instead of special-casing the baseline.
+    val sequence = remember(rules, tokenCount) { frictionSequence(rules, tokenCount) }
+    var step by remember(app.packageName, sequence) { mutableStateOf(0) }
+    val current = step.coerceIn(sequence.indices)
     val advance: () -> Unit = {
-        if (current >= rules.lastIndex) onComplete() else step = current + 1
+        if (current >= sequence.lastIndex) onComplete() else step = current + 1
     }
-    val rule = rules[current]
+    val rule = sequence[current]
     key(current) {
         when (rule.type) {
             FrictionType.TOKENS ->
@@ -69,6 +67,13 @@ fun FrictionGate(
         }
     }
 }
+
+/**
+ * The full ordered list of frictions to run: the baseline token challenge (sized by
+ * [tokenCount]) first, then the app's assigned [rules] stacked on top.
+ */
+internal fun frictionSequence(rules: List<FrictionRule>, tokenCount: Int): List<FrictionRule> =
+    listOf(FrictionRule(FrictionType.TOKENS, tokenCount)) + rules
 
 // ── Type-N-tokens dialog ────────────────────────────────────────────────────
 
