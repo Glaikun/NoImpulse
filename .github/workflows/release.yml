@@ -1,0 +1,140 @@
+name: Release
+
+# Manual release: bump the version, build the APK, tag it, and publish a GitHub Release.
+# Pick whether this is a major/minor/patch bump when you run the workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Which part of the version to bump
+        type: choice
+        required: true
+        default: minor
+        options:
+          - major
+          - minor
+          - patch
+
+permissions:
+  contents: write   # push the version-bump commit + tag, and create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # Read the current versionName/versionCode from the Gradle file, bump them
+      # per the chosen release type, and write them back. versionName is treated as
+      # semver (MAJOR.MINOR.PATCH); a two-part "1.0" is read as 1.0.0.
+      - name: Bump version
+        id: version
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+        run: |
+          set -euo pipefail
+          GRADLE_FILE=app/build.gradle.kts
+
+          current_name=$(sed -nE 's/.*versionName *= *"([^"]+)".*/\1/p' "$GRADLE_FILE")
+          current_code=$(sed -nE 's/.*versionCode *= *([0-9]+).*/\1/p' "$GRADLE_FILE")
+
+          IFS='.' read -r major minor patch <<< "$current_name" || true
+          major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
+
+          case "$RELEASE_TYPE" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          new_name="$major.$minor.$patch"
+          new_code=$((current_code + 1))
+
+          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$new_name\"/" "$GRADLE_FILE"
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $new_code/" "$GRADLE_FILE"
+
+          echo "Bumped $current_name (code $current_code) -> $new_name (code $new_code)"
+          echo "name=$new_name" >> "$GITHUB_OUTPUT"
+          echo "tag=v$new_name" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Assemble release APK
+        run: ./gradlew assembleRelease
+
+      # Sign the APK if signing secrets are configured; otherwise emit the unsigned
+      # APK (not installable) so the release still produces an artifact.
+      - name: Package APK
+        id: apk
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          unsigned=app/build/outputs/apk/release/app-release-unsigned.apk
+          build_tools=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+            out="NoImpulse-${VERSION_NAME}.apk"
+            "${build_tools}zipalign" -p -f 4 "$unsigned" aligned.apk
+            "${build_tools}apksigner" sign \
+              --ks keystore.jks \
+              --ks-pass "pass:${KEYSTORE_PASSWORD}" \
+              --ks-key-alias "${KEY_ALIAS}" \
+              --key-pass "pass:${KEY_PASSWORD}" \
+              --out "$out" aligned.apk
+            rm -f keystore.jks aligned.apk
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            out="NoImpulse-${VERSION_NAME}-unsigned.apk"
+            cp "$unsigned" "$out"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "path=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump and tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts
+          git commit -m "Release $VERSION_NAME"
+          git tag "$TAG"
+          git push origin "HEAD:${{ github.ref_name }}"
+          git push origin "$TAG"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          APK: ${{ steps.apk.outputs.path }}
+          SIGNED: ${{ steps.apk.outputs.signed }}
+        run: |
+          set -euo pipefail
+          notes="Automated release $TAG."
+          if [ "$SIGNED" != "true" ]; then
+            notes="${notes}"$'\n\n'"> ⚠️ This APK is **unsigned** and cannot be installed directly. Configure the \`KEYSTORE_BASE64\`, \`KEYSTORE_PASSWORD\`, \`KEY_ALIAS\`, and \`KEY_PASSWORD\` repository secrets to publish a signed APK."
+          fi
+          gh release create "$TAG" "$APK" --title "$TAG" --notes "$notes"
