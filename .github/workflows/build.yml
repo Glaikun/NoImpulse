@@ -1,9 +1,9 @@
 name: Build
 
-# CI: build and test on every push to master and on pull requests.
+# CI: build and test on every push to master/develop and on pull requests.
 on:
   push:
-    branches: [master]
+    branches: [master, develop]
   pull_request:
   workflow_dispatch:
 
