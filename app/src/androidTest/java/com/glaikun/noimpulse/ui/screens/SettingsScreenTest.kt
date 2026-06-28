@@ -8,9 +8,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.glaikun.noimpulse.model.TextSize
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import com.glaikun.noimpulse.ui.HomeViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -99,5 +102,74 @@ class SettingsScreenTest {
 
         // The "Add allowed time" affordance only shows once the mode is on.
         rule.onAllNodesWithTag("addAllowedWindow").assertCountEquals(0)
+    }
+
+    @Test
+    fun turningOffRestrictedModeWithWindowsOpensUuidGateAndDoesNotDisableImmediately() {
+        var enabledChange: Boolean? = null
+        rule.setContent {
+            SettingsScreen(
+                state = HomeViewModel.UiState(
+                    restrictedModeEnabled = true,
+                    allowedWindows = listOf(TimeWindow(9 * 60, 17 * 60)),
+                ),
+                onSetRestrictedModeEnabled = { enabledChange = it },
+            )
+        }
+
+        rule.onNodeWithTag("restrictedModeSwitch").performClick()
+
+        // The gate appears and the mode is NOT disabled until the UUID is typed.
+        rule.onNodeWithTag("uuidInput").assertIsDisplayed()
+        rule.onNodeWithTag("uuidConfirm").assertIsDisplayed()
+        assertNull(enabledChange)
+    }
+
+    @Test
+    fun turningOffRestrictedModeWithNoWindowsDisablesDirectly() {
+        var enabledChange: Boolean? = null
+        rule.setContent {
+            SettingsScreen(
+                state = HomeViewModel.UiState(
+                    restrictedModeEnabled = true,
+                    allowedWindows = emptyList(),
+                ),
+                onSetRestrictedModeEnabled = { enabledChange = it },
+            )
+        }
+
+        rule.onNodeWithTag("restrictedModeSwitch").performClick()
+
+        // No schedule to protect, so no gate — it disables immediately.
+        rule.onAllNodesWithTag("uuidInput").assertCountEquals(0)
+        assertEquals(false, enabledChange)
+    }
+
+    @Test
+    fun selectingThemeModeFiresCallback() {
+        var mode: ThemeMode? = null
+        rule.setContent {
+            SettingsScreen(
+                state = HomeViewModel.UiState(themeMode = ThemeMode.DARK),
+                onSetThemeMode = { mode = it },
+            )
+        }
+
+        rule.onNodeWithTag("themeMode_LIGHT").performClick()
+        assertEquals(ThemeMode.LIGHT, mode)
+    }
+
+    @Test
+    fun selectingTextSizeFiresCallback() {
+        var size: TextSize? = null
+        rule.setContent {
+            SettingsScreen(
+                state = HomeViewModel.UiState(textSize = TextSize.DEFAULT),
+                onSetTextSize = { size = it },
+            )
+        }
+
+        rule.onNodeWithTag("textSize_LARGEST").performClick()
+        assertEquals(TextSize.LARGEST, size)
     }
 }

@@ -7,4 +7,6 @@ data class SettingsSnapshot(
     val appFriction: Map<String, List<FrictionRule>> = emptyMap(),
     val restrictedModeEnabled: Boolean = false,
     val allowedWindows: List<TimeWindow> = emptyList(),
+    val themeMode: ThemeMode = ThemeMode.DARK,
+    val textSize: TextSize = TextSize.DEFAULT,
 )

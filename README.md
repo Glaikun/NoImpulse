@@ -41,8 +41,10 @@ The whole interface is intentionally dull — visual calm is part of the point.
 - **Friction.** Launching a non-allowlisted app runs a sequence of small obstacles: a baseline "type these tokens" challenge that escalates with how much you've already drifted today, plus any extra friction you've chosen to stack on an app (a timed wait, a math problem, or reflection questions).
 - **Re-friction.** Returning to a friction-tracked app via Recents re-shows the gate, so the drawer isn't a one-time toll.
 - **Onboarding.** A short intro explains the launcher model, the deliberate friction, and the privacy posture, followed by a setup screen for permissions and the initial allowlist.
-- **Settings.** Reached from the gear in the app drawer. Re-grant permissions, re-prompt to make NoImpulse the default launcher (behind the same UUID gate as allowlisting), and configure Restricted Mode — all after onboarding.
-- **Restricted Mode.** An optional schedule of "allowed times" of day. While it's on and the clock is outside every allowed window, the phone is in *restricted time*: no app will open and returning to one bounces you back to the launcher with a "Currently in restricted time" notice. Inside an allowed window everything behaves normally.
+- **Always-allowed core.** Phone, settings, messages, camera, and maps (the device defaults) stay allowlisted at all times — they can't be removed from the allowlist, can't have friction added, and are never blocked by Restricted Mode.
+- **Settings.** Reached from the gear in the app drawer. Re-grant permissions, re-prompt to make NoImpulse the default launcher (behind the same UUID gate as allowlisting), configure Restricted Mode, and choose the colour theme and text size — all after onboarding.
+- **Restricted Mode.** An optional schedule of "allowed times" of day. While it's on and the clock is outside every allowed window, the phone is in *restricted time*: apps you haven't allowlisted won't open and returning to one bounces you back to the launcher with a "Currently in restricted time" notice. Your allowlisted apps (and the always-allowed core) keep working. Inside an allowed window everything behaves normally. Turning the mode off while a schedule exists is gated behind the UUID challenge, so loosening it takes the same deliberate effort as removing friction.
+- **Appearance & accessibility.** A light/dark/follow-system theme choice, and a text-size setting (Default / Large / Largest) that scales every text style for easier reading.
 
 ## Architecture
 
@@ -80,7 +82,7 @@ Built with **Jetpack Compose** (the modern replacement for XML layouts) and **Ma
 This layer owns the data and is the single source of truth — the UI never reads files or databases directly.
 
 - **Repositories and sources** are plain Kotlin classes the rest of the app talks to. A `ViewModel` asks `SettingsRepository` for the allowed apps; it doesn't know or care where they're stored. Each interface lives beside its implementation in [`data/`](app/src/main/java/com/glaikun/noimpulse/data), and the plain data types they exchange live in [`model/`](app/src/main/java/com/glaikun/noimpulse/model).
-- **Jetpack DataStore (Preferences)** — replaces `SharedPreferences`. Holds the `introSeen`/`setupComplete` flags, the allowlist (a `Set<String>` of package names), per-app friction rules, the date-keyed drawer-launch counter, and the Restricted Mode toggle plus its allowed time-of-day windows.
+- **Jetpack DataStore (Preferences)** — replaces `SharedPreferences`. Holds the `introSeen`/`setupComplete` flags, the allowlist (a `Set<String>` of package names), per-app friction rules, the date-keyed drawer-launch counter, the Restricted Mode toggle plus its allowed time-of-day windows, and the theme/text-size preferences.
 - **Room** — planned for anything that needs structured rows or history (usage roll-ups, domain rules with timestamps). Not wired yet.
 - **System APIs** — `UsageStatsManager` (today's pickups + screen time), `PackageManager` (list installed apps, resolve the device's default Settings/Phone/Messages/Maps/Clock/Camera/Gallery for the first-run seed), `RoleManager` (the default-home prompt), and `AccessibilityService` (re-friction on foreground return).
 
@@ -106,7 +108,9 @@ app/src/main/java/com/glaikun/noimpulse/
 │   ├── StatusSnapshot.kt        — system-status read (usage access, default-home, accessibility, usage)
 │   ├── SettingsSnapshot.kt      — persisted settings snapshot (intro flag, allowlist, friction, restricted mode)
 │   ├── Friction.kt              — FrictionType enum + FrictionRule data class
-│   └── TimeWindow.kt            — a time-of-day window (minutes since midnight) for Restricted Mode
+│   ├── TimeWindow.kt            — a time-of-day window (minutes since midnight) for Restricted Mode
+│   ├── ThemeMode.kt             — colour-scheme choice (system / light / dark)
+│   └── TextSize.kt              — accessibility text-size choice + its scale factor
 ├── data/                        — repositories, system data sources, and the interfaces they implement
 │   ├── SettingsRepository.kt            — settings contract (allowlist, friction, counters)
 │   ├── DataStoreSettingsRepository.kt   — DataStore-backed implementation
@@ -133,7 +137,7 @@ app/src/main/java/com/glaikun/noimpulse/
     │   ├── HomeScreen.kt        — clock/date/battery/stats + allowlisted-app grid
     │   ├── IntroScreen.kt       — pre-setup explainer
     │   ├── SetupScreen.kt       — first-run permissions + allowlist seed
-    │   └── SettingsScreen.kt    — post-onboarding settings (permissions, switch launcher, Restricted Mode)
+    │   └── SettingsScreen.kt    — post-onboarding settings (permissions, switch launcher, Restricted Mode, theme + text size)
     ├── drawer/
     │   └── AppDrawerScreen.kt   — swipe-up drawer; every installed app + per-app friction options
     └── theme/                   — Material 3 colour, typography, theme

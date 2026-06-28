@@ -12,6 +12,8 @@ import com.glaikun.noimpulse.model.AppEntry
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.SettingsSnapshot
 import com.glaikun.noimpulse.model.StatusSnapshot
+import com.glaikun.noimpulse.model.TextSize
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.di.IoDispatcher
@@ -37,6 +39,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -76,6 +79,8 @@ class HomeViewModel @Inject constructor(
         val allowedWindows: List<TimeWindow> = emptyList(),
         /** True when Restricted Mode is on and the current time is outside every allowed window. */
         val isRestrictedNow: Boolean = false,
+        val themeMode: ThemeMode = ThemeMode.DARK,
+        val textSize: TextSize = TextSize.DEFAULT,
     )
 
     // ── Routing state machine ────────────────────────────────────────────────
@@ -166,6 +171,8 @@ class HomeViewModel @Inject constructor(
                     allowedWindows = settingsSnap.allowedWindows,
                     minuteOfDay = minuteOfDay(),
                 ),
+                themeMode = settingsSnap.themeMode,
+                textSize = settingsSnap.textSize,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -195,8 +202,22 @@ class HomeViewModel @Inject constructor(
             .flowOn(ioDispatcher)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
+    /**
+     * The always-allowed core (phone/settings/messages/camera/maps). Exposed for the UI so
+     * it can lock those rows; [lockedCache] mirrors the latest value for the mutation guards.
+     */
+    val lockedPackages: StateFlow<Set<String>> =
+        statusRefresh
+            .map { launcher.alwaysAllowedPackages().toSet() }
+            .onEach { lockedCache = it }
+            .flowOn(ioDispatcher)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
+
+    @Volatile private var lockedCache: Set<String> = emptySet()
+
     init {
         seedEssentialsIfFresh()
+        ensureAlwaysAllowed()
     }
 
     /** The greyscale-rendered launcher icon for [packageName] (cached in the source). */
@@ -211,11 +232,15 @@ class HomeViewModel @Inject constructor(
     }
 
     fun setAppAllowed(packageName: String, allowed: Boolean) {
+        // The always-allowed core can never be removed from the allowlist.
+        if (!allowed && packageName in lockedCache) return
         viewModelScope.launch { settings.setAppAllowed(packageName, allowed) }
     }
 
     /** Adds an opening-friction rule to an app. */
     fun addAppFriction(packageName: String, rule: FrictionRule) {
+        // The always-allowed core can never have friction added.
+        if (packageName in lockedCache) return
         viewModelScope.launch { settings.addAppFriction(packageName, rule) }
     }
 
@@ -236,6 +261,14 @@ class HomeViewModel @Inject constructor(
     /** Removes an allowed time-of-day window from the Restricted Mode schedule. */
     fun removeAllowedWindow(window: TimeWindow) {
         viewModelScope.launch { settings.removeAllowedWindow(window) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settings.setThemeMode(mode) }
+    }
+
+    fun setTextSize(size: TextSize) {
+        viewModelScope.launch { settings.setTextSize(size) }
     }
 
     /**
@@ -259,6 +292,19 @@ class HomeViewModel @Inject constructor(
      * usable out of the box. Idempotent — once the allowlist is non-empty it no-ops,
      * so users who turn an essential off won't have it silently re-added.
      */
+    /**
+     * Guarantees the always-allowed core (phone/settings/messages/camera/maps) is on the
+     * allowlist. Idempotent and runs every start, so even if a previous version let one be
+     * removed, it's restored. Also primes [lockedCache] for the mutation guards.
+     */
+    private fun ensureAlwaysAllowed() {
+        viewModelScope.launch(ioDispatcher) {
+            val locked = launcher.alwaysAllowedPackages()
+            lockedCache = locked.toSet()
+            locked.forEach { settings.setAppAllowed(it, true) }
+        }
+    }
+
     private fun seedEssentialsIfFresh() {
         viewModelScope.launch(ioDispatcher) {
             if (settings.setupComplete.first()) return@launch
@@ -346,6 +392,14 @@ class HomeViewModel @Inject constructor(
     private fun homeApps(): Flow<List<AppEntry>> =
         statusRefresh.map { launcher.homeScreenApps() }.flowOn(ioDispatcher)
 
+    /** Display preferences bundled so they fit in one slot of the snapshot [combine]. */
+    private data class DisplayPrefs(
+        val restrictedModeEnabled: Boolean,
+        val allowedWindows: List<TimeWindow>,
+        val themeMode: ThemeMode,
+        val textSize: TextSize,
+    )
+
     /** Resolves the persisted allowlist (package names) into displayable [AppEntry]s. */
     private fun settingsSnapshots(): Flow<SettingsSnapshot> =
         combine(
@@ -353,17 +407,24 @@ class HomeViewModel @Inject constructor(
             settings.setupComplete,
             settings.allowedPackages,
             settings.appFriction,
-            combine(settings.restrictedModeEnabled, settings.allowedTimeWindows, ::Pair),
-        ) { introSeen, complete, pkgs, friction, restricted ->
-            val (restrictedEnabled, allowedWindows) = restricted
+            combine(
+                settings.restrictedModeEnabled,
+                settings.allowedTimeWindows,
+                settings.themeMode,
+                settings.textSize,
+                ::DisplayPrefs,
+            ),
+        ) { introSeen, complete, pkgs, friction, display ->
             SettingsSnapshot(
                 introSeen = introSeen,
                 setupComplete = complete,
                 allowedApps = pkgs.mapNotNull { launcher.appEntryFor(it) }
                     .sortedBy { it.label.lowercase() },
                 appFriction = friction,
-                restrictedModeEnabled = restrictedEnabled,
-                allowedWindows = allowedWindows,
+                restrictedModeEnabled = display.restrictedModeEnabled,
+                allowedWindows = display.allowedWindows,
+                themeMode = display.themeMode,
+                textSize = display.textSize,
             )
         }.flowOn(ioDispatcher)
 

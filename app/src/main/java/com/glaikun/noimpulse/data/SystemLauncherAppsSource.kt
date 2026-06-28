@@ -79,6 +79,14 @@ class SystemLauncherAppsSource @Inject constructor(
         resolveDefaultPackage(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_GALLERY)),
     ).distinct()
 
+    override fun alwaysAllowedPackages(): List<String> = listOfNotNull(
+        resolveDefaultPackage(Intent(Intent.ACTION_DIAL)),                       // phone
+        resolveDefaultPackage(Intent(Settings.ACTION_SETTINGS)),                 // settings
+        Telephony.Sms.getDefaultSmsPackage(context),                            // messages
+        resolveDefaultPackage(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)), // camera
+        resolveDefaultPackage(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0"))),     // maps
+    ).distinct()
+
     private fun resolveDefaultPackage(intent: Intent): String? =
         pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
             ?.activityInfo

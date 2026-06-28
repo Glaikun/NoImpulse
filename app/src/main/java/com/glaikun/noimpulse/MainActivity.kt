@@ -15,6 +15,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +32,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.ui.drawer.AppDrawerScreen
 import com.glaikun.noimpulse.ui.AppScreen
 import com.glaikun.noimpulse.ui.FrictionGate
@@ -59,11 +61,17 @@ class MainActivity : ComponentActivity() {
         consumeRefrictionExtra(intent)
 
         setContent {
-            NoImpulseTheme {
+            val state by vm.state.collectAsStateWithLifecycle()
+            val darkTheme = when (state.themeMode) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
+
+            NoImpulseTheme(darkTheme = darkTheme, textScale = state.textSize.scale) {
                 // Re-read usage access / default-home / accessibility status whenever we come back.
                 LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshStatus() }
 
-                val state by vm.state.collectAsStateWithLifecycle()
                 val screen by vm.screen.collectAsStateWithLifecycle()
                 val installedApps by vm.installedApps.collectAsStateWithLifecycle()
 
@@ -71,11 +79,14 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.StartActivityForResult(),
                 ) { vm.refreshStatus() }
 
-                // Shown whenever a launch is attempted during restricted time. Single
-                // chokepoint so every launch path (home, drawer, re-friction) is covered.
+                // Shown when a non-allowlisted app launch is attempted during restricted time.
+                // Single chokepoint so every launch path (home, drawer, re-friction) is covered;
+                // allowlisted apps (including the always-allowed core) stay reachable off-hours.
                 var restrictedNotice by remember { mutableStateOf(false) }
                 val attemptLaunch: (String) -> Unit = { pkg ->
-                    if (vm.state.value.isRestrictedNow) restrictedNotice = true else launchApp(pkg)
+                    val current = vm.state.value
+                    val isAllowed = current.allowedApps.any { it.packageName == pkg }
+                    if (current.isRestrictedNow && !isAllowed) restrictedNotice = true else launchApp(pkg)
                 }
 
                 when (val s = screen) {
@@ -112,14 +123,18 @@ class MainActivity : ComponentActivity() {
                             onSetRestrictedModeEnabled = vm::setRestrictedModeEnabled,
                             onAddAllowedWindow = vm::addAllowedWindow,
                             onRemoveAllowedWindow = vm::removeAllowedWindow,
+                            onSetThemeMode = vm::setThemeMode,
+                            onSetTextSize = vm::setTextSize,
                         )
                     }
 
                     AppScreen.Drawer -> {
                         BackHandler { vm.closeDrawer() }
+                        val lockedPackages by vm.lockedPackages.collectAsStateWithLifecycle()
                         AppDrawerScreen(
                             installedApps = installedApps,
                             allowedPackages = state.allowedApps.mapTo(HashSet()) { it.packageName },
+                            lockedPackages = lockedPackages,
                             drawerLaunchesToday = state.drawerLaunchesToday,
                             isRestrictedNow = state.isRestrictedNow,
                             onLaunchApp = { pkg ->

@@ -62,6 +62,7 @@ import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
 fun AppDrawerScreen(
     installedApps: List<AppEntry>,
     allowedPackages: Set<String>,
+    lockedPackages: Set<String> = emptySet(),
     drawerLaunchesToday: Int,
     isRestrictedNow: Boolean = false,
     onLaunchApp: (String) -> Unit = {},
@@ -146,10 +147,11 @@ fun AppDrawerScreen(
                         loadIcon = loadIcon,
                         onClick = {
                             when {
-                                // Restricted time blocks everything — show the notice and
-                                // don't even open the friction gate.
-                                isRestrictedNow -> onRestrictedTap()
+                                // Allowlisted apps launch directly — even during restricted time.
                                 app.packageName in allowedPackages -> onLaunchApp(app.packageName)
+                                // Restricted time blocks the rest — show the notice instead of
+                                // opening the friction gate.
+                                isRestrictedNow -> onRestrictedTap()
                                 else -> pendingApp = app
                             }
                         },
@@ -181,6 +183,7 @@ fun AppDrawerScreen(
         AppOptionsSheet(
             app = app,
             isAllowed = app.packageName in allowedPackages,
+            isLocked = app.packageName in lockedPackages,
             currentFrictions = appFriction[app.packageName].orEmpty(),
             onDismiss = { sheetApp = null },
             onAddToAllowlist = {
@@ -281,6 +284,7 @@ private fun DrawerAppItem(
 private fun AppOptionsSheet(
     app: AppEntry,
     isAllowed: Boolean,
+    isLocked: Boolean,
     currentFrictions: List<FrictionRule>,
     onDismiss: () -> Unit,
     onAddToAllowlist: () -> Unit,
@@ -305,6 +309,19 @@ private fun AppOptionsSheet(
         ) {
             Text(text = app.label, style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
+
+            // The always-allowed core (phone/settings/messages/camera/maps) has no controls —
+            // it can't be removed from the allowlist or have friction added.
+            if (isLocked) {
+                Text(
+                    text = "Always available. This core app can't be removed from the " +
+                        "allowlist or have friction added.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("lockedAppNote"),
+                )
+                return@Column
+            }
 
             if (isAllowed) {
                 TextButton(

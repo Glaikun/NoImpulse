@@ -6,7 +6,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Set of Material typography styles to start with
+// Set of Material typography styles to start with. These define base sizes; the
+// accessibility text-size setting scales them globally via the font scale applied in
+// NoImpulseTheme, so individual sizes here don't need per-style scaling.
 val Typography = Typography(
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,

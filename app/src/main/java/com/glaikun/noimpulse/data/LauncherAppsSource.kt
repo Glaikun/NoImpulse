@@ -29,4 +29,12 @@ interface LauncherAppsSource {
      * device are omitted. Caller is responsible for cross-checking against launchable apps.
      */
     fun essentialPackages(): List<String>
+
+    /**
+     * The non-negotiable core: phone, settings, messages, camera, maps (the device defaults).
+     * These stay allowlisted and friction-free at all times — they can't be removed from the
+     * allowlist, can't have friction added, and aren't blocked by Restricted Mode. Packages
+     * that can't be resolved on this device are omitted.
+     */
+    fun alwaysAllowedPackages(): List<String>
 }

@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
+import com.glaikun.noimpulse.model.TextSize
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -218,6 +220,46 @@ class DataStoreSettingsRepositoryTest {
         }
 
         assertEquals(listOf(TimeWindow(540, 1020)), repo.allowedTimeWindows.first())
+    }
+
+    // ── Appearance (theme + text size) ───────────────────────────────────────
+
+    @Test
+    fun `themeMode defaults to dark`() = runTest {
+        assertEquals(ThemeMode.DARK, newRepo().themeMode.first())
+    }
+
+    @Test
+    fun `setThemeMode persists`() = runTest {
+        val repo = newRepo()
+        repo.setThemeMode(ThemeMode.LIGHT)
+        assertEquals(ThemeMode.LIGHT, repo.themeMode.first())
+    }
+
+    @Test
+    fun `themeMode falls back to dark for an unknown stored value`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { it[stringPreferencesKey("theme_mode")] = "PUCE" }
+        assertEquals(ThemeMode.DARK, repo.themeMode.first())
+    }
+
+    @Test
+    fun `textSize defaults to default`() = runTest {
+        assertEquals(TextSize.DEFAULT, newRepo().textSize.first())
+    }
+
+    @Test
+    fun `setTextSize persists`() = runTest {
+        val repo = newRepo()
+        repo.setTextSize(TextSize.LARGEST)
+        assertEquals(TextSize.LARGEST, repo.textSize.first())
+    }
+
+    @Test
+    fun `textSize falls back to default for an unknown stored value`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { it[stringPreferencesKey("text_size")] = "HUGE" }
+        assertEquals(TextSize.DEFAULT, repo.textSize.first())
     }
 
     // ── Drawer-launch counter ────────────────────────────────────────────────

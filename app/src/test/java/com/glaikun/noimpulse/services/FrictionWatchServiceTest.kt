@@ -110,15 +110,16 @@ class FrictionWatchServiceTest {
         assertFalse(result)
     }
 
-    // ── Restricted time forces re-trigger past the allowlist + session ───────────
+    // ── Restricted time blocks non-allowed apps but spares the allowlist ─────────
 
     @Test
-    fun `restricted time triggers for an allowlisted app`() {
-        assertTrue(decide("com.android.dialer", restrictedNow = true))
+    fun `restricted time still skips an allowlisted app`() {
+        // Allowlisted apps stay usable off-hours — restriction only targets non-allowed apps.
+        assertFalse(decide("com.android.dialer", restrictedNow = true))
     }
 
     @Test
-    fun `restricted time triggers even for an in-session app`() {
+    fun `restricted time triggers for a non-allowlisted app even when in session`() {
         assertTrue(decide("com.twitter.android", inSession = { true }, restrictedNow = true))
     }
 

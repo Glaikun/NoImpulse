@@ -5,6 +5,8 @@ import com.glaikun.noimpulse.model.AppEntry
 import com.glaikun.noimpulse.model.DailyUsage
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
+import com.glaikun.noimpulse.model.TextSize
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.data.AccessibilityStatusSource
@@ -210,6 +212,71 @@ class HomeViewModelTest {
         assertEquals(listOf("com.maps"), vm.state.value.allowedApps.map { it.packageName })
     }
 
+    // ── Always-allowed core (phone/settings/messages/camera/maps) ───────────────
+
+    @Test
+    fun `always-allowed core is force-added to the allowlist on start`() {
+        runTest {
+            val launcher = FakeLauncherAppsSource(
+                installed = listOf(AppEntry("Phone", "com.phone"), AppEntry("Maps", "com.maps")),
+                alwaysAllowed = listOf("com.phone", "com.maps"),
+            )
+            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            runCurrent()
+
+            assertEquals(
+                setOf("com.phone", "com.maps"),
+                vm.state.value.allowedApps.mapTo(HashSet()) { it.packageName },
+            )
+        }
+    }
+
+    @Test
+    fun `a locked app cannot be removed from the allowlist`() {
+        runTest {
+            val launcher = FakeLauncherAppsSource(
+                installed = listOf(AppEntry("Phone", "com.phone")),
+                alwaysAllowed = listOf("com.phone"),
+            )
+            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            runCurrent()
+
+            vm.setAppAllowed("com.phone", false)   // guarded — must be a no-op
+            runCurrent()
+
+            assertTrue("com.phone" in vm.state.value.allowedApps.map { it.packageName })
+        }
+    }
+
+    @Test
+    fun `a locked app cannot have friction added`() {
+        runTest {
+            val launcher = FakeLauncherAppsSource(
+                installed = listOf(AppEntry("Phone", "com.phone")),
+                alwaysAllowed = listOf("com.phone"),
+            )
+            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            runCurrent()
+
+            vm.addAppFriction("com.phone", FrictionRule(FrictionType.MATH, 1))   // guarded
+            runCurrent()
+
+            assertNull(vm.state.value.appFriction["com.phone"])
+        }
+    }
+
+    @Test
+    fun `lockedPackages exposes the always-allowed core`() {
+        runTest {
+            val launcher = FakeLauncherAppsSource(alwaysAllowed = listOf("com.phone", "com.maps"))
+            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            backgroundScope.launch { vm.lockedPackages.collect {} }
+            runCurrent()
+
+            assertEquals(setOf("com.phone", "com.maps"), vm.lockedPackages.value)
+        }
+    }
+
     // ── Restricted Mode ───────────────────────────────────────────────────────
 
     @Test
@@ -242,6 +309,27 @@ class HomeViewModelTest {
 
         assertEquals(listOf(TimeWindow(0, 0)), vm.state.value.allowedWindows)
         assertFalse(vm.state.value.isRestrictedNow)
+    }
+
+    // ── Appearance ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `theme and text size default to dark and default`() = runTest {
+        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        assertEquals(ThemeMode.DARK, vm.state.value.themeMode)
+        assertEquals(TextSize.DEFAULT, vm.state.value.textSize)
+    }
+
+    @Test
+    fun `setThemeMode and setTextSize propagate to state`() = runTest {
+        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+
+        vm.setThemeMode(ThemeMode.LIGHT)
+        vm.setTextSize(TextSize.LARGEST)
+        runCurrent()
+
+        assertEquals(ThemeMode.LIGHT, vm.state.value.themeMode)
+        assertEquals(TextSize.LARGEST, vm.state.value.textSize)
     }
 
     @Test
@@ -608,6 +696,7 @@ private class FakeLauncherAppsSource(
     @Volatile var defaultHome: Boolean = false,
     private val installed: List<AppEntry> = emptyList(),
     private val essentials: List<String> = emptyList(),
+    private val alwaysAllowed: List<String> = emptyList(),
 ) : LauncherAppsSource {
     override fun isDefaultHome(): Boolean = defaultHome
     override fun installedLaunchableApps(): List<AppEntry> = installed
@@ -616,6 +705,7 @@ private class FakeLauncherAppsSource(
     override fun loadIcon(packageName: String): android.graphics.drawable.Drawable? = null
     override fun homeScreenApps(): List<AppEntry> = emptyList()
     override fun essentialPackages(): List<String> = essentials
+    override fun alwaysAllowedPackages(): List<String> = alwaysAllowed
 }
 
 private class FakeSettingsRepository(
@@ -631,6 +721,8 @@ private class FakeSettingsRepository(
     private val _appFriction = MutableStateFlow<Map<String, List<FrictionRule>>>(emptyMap())
     private val _restrictedModeEnabled = MutableStateFlow(false)
     private val _allowedTimeWindows = MutableStateFlow<List<TimeWindow>>(emptyList())
+    private val _themeMode = MutableStateFlow(ThemeMode.DARK)
+    private val _textSize = MutableStateFlow(TextSize.DEFAULT)
 
     override val introSeen: Flow<Boolean> = _introSeen
     override val setupComplete: Flow<Boolean> = _setupComplete
@@ -639,6 +731,8 @@ private class FakeSettingsRepository(
     override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
     override val restrictedModeEnabled: Flow<Boolean> = _restrictedModeEnabled
     override val allowedTimeWindows: Flow<List<TimeWindow>> = _allowedTimeWindows
+    override val themeMode: Flow<ThemeMode> = _themeMode
+    override val textSize: Flow<TextSize> = _textSize
 
     override suspend fun setIntroSeen(seen: Boolean) {
         _introSeen.value = seen
@@ -683,6 +777,14 @@ private class FakeSettingsRepository(
 
     override suspend fun removeAllowedWindow(window: TimeWindow) {
         _allowedTimeWindows.value = _allowedTimeWindows.value - window
+    }
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+    }
+
+    override suspend fun setTextSize(size: TextSize) {
+        _textSize.value = size
     }
 }
 

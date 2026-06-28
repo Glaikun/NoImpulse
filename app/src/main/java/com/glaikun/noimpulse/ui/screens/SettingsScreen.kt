@@ -1,9 +1,11 @@
 package com.glaikun.noimpulse.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +21,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -35,6 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.glaikun.noimpulse.model.TextSize
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import com.glaikun.noimpulse.ui.AccessibilityPermissionStep
 import com.glaikun.noimpulse.ui.AccessibilityPrePromptDialog
@@ -53,10 +58,13 @@ fun SettingsScreen(
     onSetRestrictedModeEnabled: (Boolean) -> Unit = {},
     onAddAllowedWindow: (TimeWindow) -> Unit = {},
     onRemoveAllowedWindow: (TimeWindow) -> Unit = {},
+    onSetThemeMode: (ThemeMode) -> Unit = {},
+    onSetTextSize: (TextSize) -> Unit = {},
 ) {
     var showAccessibilityPrompt by remember { mutableStateOf(false) }
     var showSwitchLauncherGate by remember { mutableStateOf(false) }
     var showAddWindow by remember { mutableStateOf(false) }
+    var showDisableRestrictedGate by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -126,14 +134,22 @@ fun SettingsScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = "Restricted Mode", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "Outside your allowed times, apps can't be used at all.",
+                        text = "Outside your allowed times, apps you haven't allowed can't be " +
+                            "opened. Your allowlisted apps still work.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Switch(
                     checked = state.restrictedModeEnabled,
-                    onCheckedChange = onSetRestrictedModeEnabled,
+                    onCheckedChange = { checked ->
+                        // Turning it on, or off with no windows, is unguarded.
+                        if (!checked) {
+                            showDisableRestrictedGate = true
+                        } else {
+                            onSetRestrictedModeEnabled(true)
+                        }
+                    },
                     modifier = Modifier.testTag("restrictedModeSwitch"),
                 )
             }
@@ -143,7 +159,8 @@ fun SettingsScreen(
                 Text(text = "Allowed times", style = MaterialTheme.typography.titleSmall)
                 if (state.allowedWindows.isEmpty()) {
                     Text(
-                        text = "No allowed times yet — every hour is restricted until you add one.",
+                        text = "No allowed times yet — non-allowed apps stay restricted every " +
+                            "hour until you add one.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -159,6 +176,41 @@ fun SettingsScreen(
                     onClick = { showAddWindow = true },
                     modifier = Modifier.testTag("addAllowedWindow"),
                 ) { Text("Add allowed time") }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+
+            // ── Appearance ──
+            Text(text = "Appearance", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(12.dp))
+
+            Text(text = "Theme", style = MaterialTheme.typography.titleSmall)
+            ThemeMode.entries.forEach { mode ->
+                OptionRow(
+                    label = themeModeLabel(mode),
+                    selected = state.themeMode == mode,
+                    testTag = "themeMode_${mode.name}",
+                    onSelect = { onSetThemeMode(mode) },
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Text(text = "Text size", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Larger text for easier reading.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextSize.entries.forEach { size ->
+                OptionRow(
+                    label = textSizeLabel(size),
+                    selected = state.textSize == size,
+                    testTag = "textSize_${size.name}",
+                    onSelect = { onSetTextSize(size) },
+                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -197,6 +249,53 @@ fun SettingsScreen(
             },
         )
     }
+
+    if (showDisableRestrictedGate) {
+        UuidChallengeDialog(
+            title = "Turn off Restricted Mode?",
+            message = "This lifts your allowed-time limits and makes apps reachable again. " +
+                "Type the code below exactly to confirm.",
+            confirmLabel = "Turn off",
+            onDismiss = { showDisableRestrictedGate = false },
+            onConfirmed = {
+                showDisableRestrictedGate = false
+                onSetRestrictedModeEnabled(false)
+            },
+        )
+    }
+}
+
+@Composable
+private fun OptionRow(
+    label: String,
+    selected: Boolean,
+    testTag: String,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag)
+            .clickable(onClick = onSelect)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onSelect)
+        Spacer(Modifier.width(8.dp))
+        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+private fun themeModeLabel(mode: ThemeMode): String = when (mode) {
+    ThemeMode.SYSTEM -> "Follow system"
+    ThemeMode.LIGHT -> "Light"
+    ThemeMode.DARK -> "Dark"
+}
+
+private fun textSizeLabel(size: TextSize): String = when (size) {
+    TextSize.DEFAULT -> "Default"
+    TextSize.LARGE -> "Large"
+    TextSize.LARGEST -> "Largest"
 }
 
 @Composable

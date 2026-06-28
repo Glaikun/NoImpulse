@@ -251,8 +251,9 @@ internal fun RestrictedTimeDialog(onDismiss: () -> Unit) {
         title = { Text("Currently in restricted time") },
         text = {
             Text(
-                text = "Restricted Mode is on and right now is outside your allowed times, " +
-                    "so apps are unavailable. They'll be reachable again during an allowed window.",
+                text = "Restricted Mode is on and right now is outside your allowed times, so " +
+                    "apps you haven't allowed are unavailable. Your allowlisted apps still work, " +
+                    "and the rest are reachable again during an allowed window.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         },

@@ -182,9 +182,9 @@ class FrictionWatchService : AccessibilityService() {
  * Skip rules (in order):
  *  1. our own package — the gate itself, the launcher home, etc.
  *  2. non-launchable packages — system overlays, IMEs, lock screen.
- *  3. [restrictedNow] — when in restricted time, every other launchable app is bounced,
- *     ignoring the allowlist and the session (the point is to make apps unusable).
- *  4. allowlisted apps — no friction by design.
+ *  3. allowlisted apps — no friction by design, and never blocked by Restricted Mode.
+ *  4. [restrictedNow] — in restricted time every *non-allowlisted* launchable app is bounced,
+ *     ignoring the session (the point is to make non-allowed apps unusable off-hours).
  *  5. packages already in the current screen-on session.
  */
 internal fun shouldTriggerRefriction(
@@ -197,8 +197,8 @@ internal fun shouldTriggerRefriction(
 ): Boolean = when {
     packageName == ownPackageName -> false
     packageName !in launchablePackages -> false
-    restrictedNow -> true
     packageName in allowedPackages -> false
+    restrictedNow -> true
     isInSession(packageName) -> false
     else -> true
 }

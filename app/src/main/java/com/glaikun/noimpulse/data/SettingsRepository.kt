@@ -1,6 +1,8 @@
 package com.glaikun.noimpulse.data
 
 import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.TextSize
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import kotlinx.coroutines.flow.Flow
 
@@ -31,6 +33,12 @@ interface SettingsRepository {
     /** The time-of-day windows during which apps stay usable while Restricted Mode is on. */
     val allowedTimeWindows: Flow<List<TimeWindow>>
 
+    /** The chosen colour scheme. */
+    val themeMode: Flow<ThemeMode>
+
+    /** The accessibility text-size choice. */
+    val textSize: Flow<TextSize>
+
     suspend fun setIntroSeen(seen: Boolean)
 
     suspend fun setSetupComplete(complete: Boolean)
@@ -53,4 +61,8 @@ interface SettingsRepository {
 
     /** Removes an allowed [window]. */
     suspend fun removeAllowedWindow(window: TimeWindow)
+
+    suspend fun setThemeMode(mode: ThemeMode)
+
+    suspend fun setTextSize(size: TextSize)
 }

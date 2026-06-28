@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
+import com.glaikun.noimpulse.model.TextSize
+import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -43,6 +45,20 @@ class DataStoreSettingsRepository @Inject constructor(
             (prefs[Keys.ALLOWED_TIME_WINDOWS] ?: emptySet())
                 .mapNotNull(::decodeWindow)
                 .sortedBy { it.startMinute }
+        }
+
+    override val themeMode: Flow<ThemeMode> =
+        dataStore.data.map { prefs ->
+            prefs[Keys.THEME_MODE]?.let { name ->
+                ThemeMode.entries.find { it.name == name }
+            } ?: ThemeMode.DARK
+        }
+
+    override val textSize: Flow<TextSize> =
+        dataStore.data.map { prefs ->
+            prefs[Keys.TEXT_SIZE]?.let { name ->
+                TextSize.entries.find { it.name == name }
+            } ?: TextSize.DEFAULT
         }
 
     override val drawerLaunchesToday: Flow<Int> =
@@ -113,6 +129,14 @@ class DataStoreSettingsRepository @Inject constructor(
         }
     }
 
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { it[Keys.THEME_MODE] = mode.name }
+    }
+
+    override suspend fun setTextSize(size: TextSize) {
+        dataStore.edit { it[Keys.TEXT_SIZE] = size.name }
+    }
+
     private object Keys {
         val INTRO_SEEN = booleanPreferencesKey("intro_seen")
         val SETUP_COMPLETE = booleanPreferencesKey("setup_complete")
@@ -122,6 +146,8 @@ class DataStoreSettingsRepository @Inject constructor(
         val DRAWER_COUNTER_DATE = stringPreferencesKey("drawer_counter_date")
         val RESTRICTED_MODE_ENABLED = booleanPreferencesKey("restricted_mode_enabled")
         val ALLOWED_TIME_WINDOWS = stringSetPreferencesKey("allowed_time_windows")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val TEXT_SIZE = stringPreferencesKey("text_size")
     }
 }
 

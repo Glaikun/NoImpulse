@@ -1,10 +1,16 @@
 package com.glaikun.noimpulse.ui.drawer
 
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.glaikun.noimpulse.model.AppEntry
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -34,14 +40,14 @@ class AppDrawerScreenTest {
     }
 
     @Test
-    fun tappingAnAppDuringRestrictedTimeShowsTheNoticeInsteadOfLaunching() {
+    fun tappingANonAllowedAppDuringRestrictedTimeShowsTheNoticeInsteadOfLaunching() {
         var restrictedTapped = false
         var launched = false
-        val app = AppEntry("Maps", "com.maps")
+        val app = AppEntry("Twitter", "com.twitter")
         rule.setContent {
             AppDrawerScreen(
                 installedApps = listOf(app),
-                allowedPackages = setOf(app.packageName),   // even an allowlisted app is blocked
+                allowedPackages = emptySet(),               // not allowed → blocked off-hours
                 drawerLaunchesToday = 0,
                 isRestrictedNow = true,
                 onLaunchApp = { launched = true },
@@ -52,5 +58,45 @@ class AppDrawerScreenTest {
         rule.onNodeWithTag("drawerApp_${app.packageName}").performClick()
         assertTrue(restrictedTapped)
         assertFalse(launched)
+    }
+
+    @Test
+    fun tappingAnAllowlistedAppDuringRestrictedTimeStillLaunches() {
+        var restrictedTapped = false
+        var launchedPkg: String? = null
+        val app = AppEntry("Phone", "com.phone")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = setOf(app.packageName),   // allowlisted → reachable off-hours
+                drawerLaunchesToday = 0,
+                isRestrictedNow = true,
+                onLaunchApp = { launchedPkg = it },
+                onRestrictedTap = { restrictedTapped = true },
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performClick()
+        assertEquals(app.packageName, launchedPkg)
+        assertFalse(restrictedTapped)
+    }
+
+    @Test
+    fun lockedAppOptionsSheetHidesRemoveAndFriction() {
+        val app = AppEntry("Phone", "com.phone")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = setOf(app.packageName),
+                lockedPackages = setOf(app.packageName),
+                drawerLaunchesToday = 0,
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performTouchInput { longClick() }
+
+        // The locked note shows; the remove-from-allowlist control does not.
+        rule.onNodeWithTag("lockedAppNote").assertIsDisplayed()
+        rule.onAllNodesWithTag("removeFromAllowlist").assertCountEquals(0)
     }
 }
