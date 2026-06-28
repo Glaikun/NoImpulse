@@ -14,6 +14,7 @@ NoImpulse is a free, open-source Android app that helps you break impulsive phon
   - [Cross-cutting concerns](#cross-cutting-concerns)
 - [Project structure](#project-structure)
 - [Ideas](#ideas)
+- [Release process](#release-process)
 - [License](#license)
 
 ## App goals
@@ -154,6 +155,27 @@ What follows is a loose backlog, not a commitment. Anything picked up should fol
 - **Temporary unlock.** An "open for N minutes" cooldown for genuinely deliberate access.
 - **Usage history.** A trends screen built on `UsageStatsManager`.
 - **Tighter re-friction.** An idle-timer fallback for the case where the screen never turns off (the session ledger only clears on screen-off today), plus an optional decay curve that softens the per-day drawer-friction escalation over idle time.
+
+## Release process
+
+Releases are cut by the **Release** GitHub Actions workflow (`.github/workflows/release.yml`), run
+manually from the Actions tab. Development happens on `develop`; `master` only ever moves through
+this workflow — direct pushes to `master` are blocked for everyone, and the workflow is the sole
+actor allowed past the branch rulesets (it authenticates as the `release-bot` deploy key).
+
+Cutting a release:
+
+1. Make sure `develop` holds the `versionName` you want to ship (in [app/build.gradle.kts](app/build.gradle.kts)).
+2. Dispatch **Release** and choose how `develop` should be bumped *afterwards* (`major`/`minor`/`patch`).
+
+The workflow then runs the unit tests, fast-forward-merges `develop` into `master`, tags and
+publishes that version (with the APK attached to a GitHub Release), and finally bumps `develop` to
+the next development version. So `master` lands on the released version while `develop` moves ahead.
+
+Prerequisites (one-time): the `RELEASE_SSH_KEY` secret (private half of the write-enabled
+`release-bot` deploy key). For an installable, signed APK, also set the `KEYSTORE_BASE64`,
+`KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD` secrets; without them the release APK is
+published unsigned.
 
 ## License
 
