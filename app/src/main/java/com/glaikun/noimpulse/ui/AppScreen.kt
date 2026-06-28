@@ -24,6 +24,9 @@ sealed interface AppScreen {
     /** The app drawer is overlaying the home. */
     data object Drawer : AppScreen
 
+    /** The post-onboarding settings screen is showing. */
+    data object Settings : AppScreen
+
     /** Re-friction is being run for [packageName], typically because the user
      *  returned to it via Recents after a screen-off cycle. */
     data class Refriction(val packageName: String) : AppScreen
@@ -45,6 +48,12 @@ sealed interface AppEvent {
 
     /** User dismissed the drawer (back press, app launched, etc.). */
     data object CloseDrawer : AppEvent
+
+    /** User tapped the settings gear in the drawer. */
+    data object OpenSettings : AppEvent
+
+    /** User left the settings screen (back press). */
+    data object CloseSettings : AppEvent
 
     /** Accessibility service spotted a foreground change that needs friction. */
     data class RefrictionRequested(val packageName: String) : AppEvent
@@ -70,6 +79,8 @@ fun nextScreen(current: AppScreen, event: AppEvent): AppScreen = when (event) {
     AppEvent.SetupFinished -> AppScreen.Home
     AppEvent.OpenDrawer -> if (current == AppScreen.Home) AppScreen.Drawer else current
     AppEvent.CloseDrawer -> if (current == AppScreen.Drawer) AppScreen.Home else current
+    AppEvent.OpenSettings -> AppScreen.Settings
+    AppEvent.CloseSettings -> AppScreen.Home
     is AppEvent.RefrictionRequested -> AppScreen.Refriction(event.packageName)
     AppEvent.RefrictionResolved -> AppScreen.Home
 }

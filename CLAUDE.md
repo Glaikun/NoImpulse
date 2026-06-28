@@ -5,6 +5,17 @@ A free, open-source, on-device Android app that helps users avoid impulsive phon
 ## How to work in this codebase
 
 - **Readability is the top priority.** Code is read far more than it is written, and this is a learning project as much as a product. Prefer the clear, obvious solution over the clever one. Match the naming, comment density, and idioms of the surrounding code. A comment should explain *why*, not restate *what*. If a choice needs justification, leave a short note rather than assuming the next reader will reconstruct it.
+- **Keep the README's file structure current.** Whenever you add a new file, move/rename one, or otherwise change the directory layout, update the annotated tree in the `## Project structure` section of [README.md](README.md) in the same change so it never drifts from reality.
+
+## Acceptance criteria (must pass before a change is done)
+
+A change is **not complete** until it builds and its tests pass. Before marking any task done — and always before opening a PR — run these and get a green result:
+
+- `./gradlew :app:testDebugUnitTest` — JVM unit tests (Robolectric + hand-written fakes).
+- `./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin` — main **and** instrumentation sources compile.
+- `./gradlew :app:assembleDebug` — the debug APK assembles.
+
+New behaviour ships **with** tests: pure logic gets a JVM unit test (`app/src/test/…`), repositories are exercised through their interface with hand-written fakes, and Compose screens get an instrumentation test (`app/src/androidTest/…`) where it adds value. Never mark work complete on a red or skipped suite — fix the root cause, or state plainly what is failing and why.
 
 ## Product constraints (non-negotiable)
 

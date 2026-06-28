@@ -5,4 +5,6 @@ data class SettingsSnapshot(
     val setupComplete: Boolean,
     val allowedApps: List<AppEntry>,
     val appFriction: Map<String, List<FrictionRule>> = emptyMap(),
+    val restrictedModeEnabled: Boolean = false,
+    val allowedWindows: List<TimeWindow> = emptyList(),
 )

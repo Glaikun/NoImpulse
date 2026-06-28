@@ -24,12 +24,14 @@ class FrictionWatchServiceTest {
     private fun decide(
         pkg: String,
         inSession: (String) -> Boolean = { false },
+        restrictedNow: Boolean = false,
     ): Boolean = shouldTriggerRefriction(
         packageName = pkg,
         ownPackageName = own,
         allowedPackages = allowed,
         launchablePackages = launchable,
         isInSession = inSession,
+        restrictedNow = restrictedNow,
     )
 
     @Test
@@ -88,6 +90,7 @@ class FrictionWatchServiceTest {
             allowedPackages = setOf(own),
             launchablePackages = setOf(own),
             isInSession = { true },
+            restrictedNow = true,
         )
         assertFalse(result)
     }
@@ -102,7 +105,30 @@ class FrictionWatchServiceTest {
             allowedPackages = setOf("com.weird.allowlisted.but.no.launcher"),
             launchablePackages = emptySet(),
             isInSession = { false },
+            restrictedNow = false,
         )
         assertFalse(result)
+    }
+
+    // ── Restricted time forces re-trigger past the allowlist + session ───────────
+
+    @Test
+    fun `restricted time triggers for an allowlisted app`() {
+        assertTrue(decide("com.android.dialer", restrictedNow = true))
+    }
+
+    @Test
+    fun `restricted time triggers even for an in-session app`() {
+        assertTrue(decide("com.twitter.android", inSession = { true }, restrictedNow = true))
+    }
+
+    @Test
+    fun `restricted time still skips our own package`() {
+        assertFalse(decide(own, restrictedNow = true))
+    }
+
+    @Test
+    fun `restricted time still skips non-launchable system overlays`() {
+        assertFalse(decide("com.android.systemui", restrictedNow = true))
     }
 }

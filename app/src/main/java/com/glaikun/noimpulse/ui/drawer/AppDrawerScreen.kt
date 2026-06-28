@@ -63,13 +63,16 @@ fun AppDrawerScreen(
     installedApps: List<AppEntry>,
     allowedPackages: Set<String>,
     drawerLaunchesToday: Int,
+    isRestrictedNow: Boolean = false,
     onLaunchApp: (String) -> Unit = {},
     onLaunchAfterChallenge: (String) -> Unit = {},
+    onRestrictedTap: () -> Unit = {},
     loadIcon: (String) -> Drawable? = { null },
     appFriction: Map<String, List<FrictionRule>> = emptyMap(),
     onSetAppAllowed: (String, Boolean) -> Unit = { _, _ -> },
     onAddAppFriction: (String, FrictionRule) -> Unit = { _, _ -> },
     onRemoveAppFriction: (String, FrictionRule) -> Unit = { _, _ -> },
+    onOpenSettings: () -> Unit = {},
 ) {
     val tokenCount = remember(drawerLaunchesToday) { tokensRequired(drawerLaunchesToday) }
     var filterText by rememberSaveable { mutableStateOf("") }
@@ -103,17 +106,18 @@ fun AppDrawerScreen(
                 modifier = Modifier.padding(top = 24.dp, bottom = 12.dp)
             ) {
                 Text(
-                    text = "All apps",
+                    text = "All Apps",
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.weight(1f)
                 )
-//                IconButton(
-//                    onClick = {}
-//                ) {
-//                    Icon(
-//                        Icons.Filled.Settings,
-//                        contentDescription = "settings")
-//                }
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.testTag("openSettings"),
+                ) {
+                    Icon(
+                        Icons.Filled.Settings,
+                        contentDescription = "settings")
+                }
             }
 
 
@@ -141,10 +145,12 @@ fun AppDrawerScreen(
                         app = app,
                         loadIcon = loadIcon,
                         onClick = {
-                            if (app.packageName in allowedPackages) {
-                                onLaunchApp(app.packageName)
-                            } else {
-                                pendingApp = app
+                            when {
+                                // Restricted time blocks everything — show the notice and
+                                // don't even open the friction gate.
+                                isRestrictedNow -> onRestrictedTap()
+                                app.packageName in allowedPackages -> onLaunchApp(app.packageName)
+                                else -> pendingApp = app
                             }
                         },
                         onLongClick = { sheetApp = app },

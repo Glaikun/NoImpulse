@@ -74,6 +74,18 @@ class AppScreenTest {
         assertEquals(AppScreen.Setup, nextScreen(AppScreen.Setup, AppEvent.CloseDrawer))
     }
 
+    // ── Settings opens from the drawer and closes back to Home ───────────────
+
+    @Test
+    fun `OpenSettings reaches Settings`() {
+        assertEquals(AppScreen.Settings, nextScreen(AppScreen.Drawer, AppEvent.OpenSettings))
+    }
+
+    @Test
+    fun `CloseSettings returns to Home`() {
+        assertEquals(AppScreen.Home, nextScreen(AppScreen.Settings, AppEvent.CloseSettings))
+    }
+
     // ── Re-friction can be entered from anywhere (service triggers it) ───────
 
     @Test

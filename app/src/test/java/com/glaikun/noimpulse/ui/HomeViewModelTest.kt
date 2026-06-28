@@ -5,6 +5,7 @@ import com.glaikun.noimpulse.model.AppEntry
 import com.glaikun.noimpulse.model.DailyUsage
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
+import com.glaikun.noimpulse.model.TimeWindow
 import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.data.AccessibilityStatusSource
 import com.glaikun.noimpulse.data.LauncherAppsSource
@@ -207,6 +208,40 @@ class HomeViewModelTest {
         runCurrent()
 
         assertEquals(listOf("com.maps"), vm.state.value.allowedApps.map { it.packageName })
+    }
+
+    // ── Restricted Mode ───────────────────────────────────────────────────────
+
+    @Test
+    fun `restricted mode defaults to off and not restricted`() = runTest {
+        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        assertFalse(vm.state.value.restrictedModeEnabled)
+        assertFalse(vm.state.value.isRestrictedNow)
+    }
+
+    @Test
+    fun `enabling restricted mode with no windows makes it restricted now`() = runTest {
+        val settings = FakeSettingsRepository()
+        val vm = activeViewModel(null, settings = settings)
+
+        vm.setRestrictedModeEnabled(true)
+        runCurrent()
+
+        assertTrue(vm.state.value.restrictedModeEnabled)
+        assertTrue(vm.state.value.isRestrictedNow)
+    }
+
+    @Test
+    fun `a whole-day allowed window keeps it unrestricted`() = runTest {
+        val settings = FakeSettingsRepository()
+        val vm = activeViewModel(null, settings = settings)
+
+        vm.setRestrictedModeEnabled(true)
+        vm.addAllowedWindow(TimeWindow(0, 0))   // 00:00–00:00 covers the whole day
+        runCurrent()
+
+        assertEquals(listOf(TimeWindow(0, 0)), vm.state.value.allowedWindows)
+        assertFalse(vm.state.value.isRestrictedNow)
     }
 
     @Test
@@ -594,12 +629,16 @@ private class FakeSettingsRepository(
     private val _allowed = MutableStateFlow(allowed)
     private val _drawerLaunches = MutableStateFlow(drawerLaunches)
     private val _appFriction = MutableStateFlow<Map<String, List<FrictionRule>>>(emptyMap())
+    private val _restrictedModeEnabled = MutableStateFlow(false)
+    private val _allowedTimeWindows = MutableStateFlow<List<TimeWindow>>(emptyList())
 
     override val introSeen: Flow<Boolean> = _introSeen
     override val setupComplete: Flow<Boolean> = _setupComplete
     override val allowedPackages: Flow<Set<String>> = _allowed
     override val appFriction: Flow<Map<String, List<FrictionRule>>> = _appFriction
     override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
+    override val restrictedModeEnabled: Flow<Boolean> = _restrictedModeEnabled
+    override val allowedTimeWindows: Flow<List<TimeWindow>> = _allowedTimeWindows
 
     override suspend fun setIntroSeen(seen: Boolean) {
         _introSeen.value = seen
@@ -630,6 +669,20 @@ private class FakeSettingsRepository(
 
     override suspend fun recordDrawerLaunch() {
         _drawerLaunches.value = _drawerLaunches.value + 1
+    }
+
+    override suspend fun setRestrictedModeEnabled(enabled: Boolean) {
+        _restrictedModeEnabled.value = enabled
+    }
+
+    override suspend fun addAllowedWindow(window: TimeWindow) {
+        if (window !in _allowedTimeWindows.value) {
+            _allowedTimeWindows.value = _allowedTimeWindows.value + window
+        }
+    }
+
+    override suspend fun removeAllowedWindow(window: TimeWindow) {
+        _allowedTimeWindows.value = _allowedTimeWindows.value - window
     }
 }
 

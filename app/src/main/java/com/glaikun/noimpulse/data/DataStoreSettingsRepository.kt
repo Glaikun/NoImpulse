@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
+import com.glaikun.noimpulse.model.TimeWindow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
@@ -32,6 +33,16 @@ class DataStoreSettingsRepository @Inject constructor(
             (prefs[Keys.APP_FRICTION] ?: emptySet())
                 .mapNotNull(::decodeFriction)
                 .groupBy({ it.first }, { it.second })
+        }
+
+    override val restrictedModeEnabled: Flow<Boolean> =
+        dataStore.data.map { it[Keys.RESTRICTED_MODE_ENABLED] ?: false }
+
+    override val allowedTimeWindows: Flow<List<TimeWindow>> =
+        dataStore.data.map { prefs ->
+            (prefs[Keys.ALLOWED_TIME_WINDOWS] ?: emptySet())
+                .mapNotNull(::decodeWindow)
+                .sortedBy { it.startMinute }
         }
 
     override val drawerLaunchesToday: Flow<Int> =
@@ -84,6 +95,24 @@ class DataStoreSettingsRepository @Inject constructor(
         }
     }
 
+    override suspend fun setRestrictedModeEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.RESTRICTED_MODE_ENABLED] = enabled }
+    }
+
+    override suspend fun addAllowedWindow(window: TimeWindow) {
+        dataStore.edit { prefs ->
+            prefs[Keys.ALLOWED_TIME_WINDOWS] =
+                (prefs[Keys.ALLOWED_TIME_WINDOWS] ?: emptySet()) + encodeWindow(window)
+        }
+    }
+
+    override suspend fun removeAllowedWindow(window: TimeWindow) {
+        dataStore.edit { prefs ->
+            prefs[Keys.ALLOWED_TIME_WINDOWS] =
+                (prefs[Keys.ALLOWED_TIME_WINDOWS] ?: emptySet()) - encodeWindow(window)
+        }
+    }
+
     private object Keys {
         val INTRO_SEEN = booleanPreferencesKey("intro_seen")
         val SETUP_COMPLETE = booleanPreferencesKey("setup_complete")
@@ -91,6 +120,8 @@ class DataStoreSettingsRepository @Inject constructor(
         val APP_FRICTION = stringSetPreferencesKey("app_friction")
         val DRAWER_LAUNCHES_TODAY = intPreferencesKey("drawer_launches_today")
         val DRAWER_COUNTER_DATE = stringPreferencesKey("drawer_counter_date")
+        val RESTRICTED_MODE_ENABLED = booleanPreferencesKey("restricted_mode_enabled")
+        val ALLOWED_TIME_WINDOWS = stringSetPreferencesKey("allowed_time_windows")
     }
 }
 
@@ -105,4 +136,16 @@ private fun decodeFriction(encoded: String): Pair<String, FrictionRule>? {
     val type = FrictionType.entries.find { it.name == parts[1] } ?: return null
     val param = parts[2].toIntOrNull() ?: return null
     return parts[0] to FrictionRule(type, param)
+}
+
+/** Encodes a window as "start|end" (minutes since midnight). */
+private fun encodeWindow(window: TimeWindow): String = "${window.startMinute}|${window.endMinute}"
+
+/** Inverse of [encodeWindow]; returns null for malformed entries. */
+private fun decodeWindow(encoded: String): TimeWindow? {
+    val parts = encoded.split('|')
+    if (parts.size != 2) return null
+    val start = parts[0].toIntOrNull() ?: return null
+    val end = parts[1].toIntOrNull() ?: return null
+    return TimeWindow(start, end)
 }

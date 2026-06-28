@@ -238,6 +238,33 @@ internal fun UuidChallengeDialog(
     )
 }
 
+// ── Restricted Mode ──────────────────────────────────────────────────────────
+
+/**
+ * Shown when the user tries to use an app while Restricted Mode has locked the current
+ * time of day. There's no way through — the only action is to acknowledge and back off.
+ */
+@Composable
+internal fun RestrictedTimeDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Currently in restricted time") },
+        text = {
+            Text(
+                text = "Restricted Mode is on and right now is outside your allowed times, " +
+                    "so apps are unavailable. They'll be reachable again during an allowed window.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("restrictedTimeOk"),
+            ) { Text("OK") }
+        },
+    )
+}
+
 // ── Opening-friction launch dialogs ──────────────────────────────────────────
 
 @Composable

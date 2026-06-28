@@ -12,6 +12,7 @@ import com.glaikun.noimpulse.model.AppEntry
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.SettingsSnapshot
 import com.glaikun.noimpulse.model.StatusSnapshot
+import com.glaikun.noimpulse.model.TimeWindow
 import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.di.IoDispatcher
 import com.glaikun.noimpulse.data.AccessibilityStatusSource
@@ -71,6 +72,10 @@ class HomeViewModel @Inject constructor(
         val homeApps: List<AppEntry> = emptyList(),
         val appFriction: Map<String, List<FrictionRule>> = emptyMap(),
         val drawerLaunchesToday: Int = 0,
+        val restrictedModeEnabled: Boolean = false,
+        val allowedWindows: List<TimeWindow> = emptyList(),
+        /** True when Restricted Mode is on and the current time is outside every allowed window. */
+        val isRestrictedNow: Boolean = false,
     )
 
     // ── Routing state machine ────────────────────────────────────────────────
@@ -94,6 +99,8 @@ class HomeViewModel @Inject constructor(
 
     fun openDrawer() = dispatch(AppEvent.OpenDrawer)
     fun closeDrawer() = dispatch(AppEvent.CloseDrawer)
+    fun openSettings() = dispatch(AppEvent.OpenSettings)
+    fun closeSettings() = dispatch(AppEvent.CloseSettings)
     fun requestRefriction(packageName: String) =
         dispatch(AppEvent.RefrictionRequested(packageName))
     fun resolveRefriction() = dispatch(AppEvent.RefrictionResolved)
@@ -152,6 +159,13 @@ class HomeViewModel @Inject constructor(
                 homeApps = homeApps,
                 appFriction = settingsSnap.appFriction,
                 drawerLaunchesToday = status.drawerLaunchesToday,
+                restrictedModeEnabled = settingsSnap.restrictedModeEnabled,
+                allowedWindows = settingsSnap.allowedWindows,
+                isRestrictedNow = isRestrictedNow(
+                    enabled = settingsSnap.restrictedModeEnabled,
+                    allowedWindows = settingsSnap.allowedWindows,
+                    minuteOfDay = minuteOfDay(),
+                ),
             )
         }.stateIn(
             scope = viewModelScope,
@@ -208,6 +222,20 @@ class HomeViewModel @Inject constructor(
     /** Removes one opening-friction rule from an app. */
     fun removeAppFriction(packageName: String, rule: FrictionRule) {
         viewModelScope.launch { settings.removeAppFriction(packageName, rule) }
+    }
+
+    fun setRestrictedModeEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setRestrictedModeEnabled(enabled) }
+    }
+
+    /** Adds an allowed time-of-day window to the Restricted Mode schedule. */
+    fun addAllowedWindow(window: TimeWindow) {
+        viewModelScope.launch { settings.addAllowedWindow(window) }
+    }
+
+    /** Removes an allowed time-of-day window from the Restricted Mode schedule. */
+    fun removeAllowedWindow(window: TimeWindow) {
+        viewModelScope.launch { settings.removeAllowedWindow(window) }
     }
 
     /**
@@ -325,13 +353,17 @@ class HomeViewModel @Inject constructor(
             settings.setupComplete,
             settings.allowedPackages,
             settings.appFriction,
-        ) { introSeen, complete, pkgs, friction ->
+            combine(settings.restrictedModeEnabled, settings.allowedTimeWindows, ::Pair),
+        ) { introSeen, complete, pkgs, friction, restricted ->
+            val (restrictedEnabled, allowedWindows) = restricted
             SettingsSnapshot(
                 introSeen = introSeen,
                 setupComplete = complete,
                 allowedApps = pkgs.mapNotNull { launcher.appEntryFor(it) }
                     .sortedBy { it.label.lowercase() },
                 appFriction = friction,
+                restrictedModeEnabled = restrictedEnabled,
+                allowedWindows = allowedWindows,
             )
         }.flowOn(ioDispatcher)
 
@@ -363,3 +395,17 @@ internal fun formatHours(minutes: Int): String = "${minutes / 60}h ${minutes % 6
  */
 internal fun tokensRequired(drawerLaunchesToday: Int): Int =
     (drawerLaunchesToday / 2 + 1).coerceIn(1, 5)
+
+/** Minutes since midnight for the current wall-clock time, in `[0, 1440)`. */
+internal fun minuteOfDay(): Int = LocalTime.now().let { it.hour * 60 + it.minute }
+
+/**
+ * Whether the user is currently in "restricted time": Restricted Mode is [enabled] and
+ * [minuteOfDay] falls outside every allowed window. An enabled schedule with no windows is
+ * always restricted — turning the mode on with nothing allowed locks everything by design.
+ */
+internal fun isRestrictedNow(
+    enabled: Boolean,
+    allowedWindows: List<TimeWindow>,
+    minuteOfDay: Int,
+): Boolean = enabled && allowedWindows.none { it.contains(minuteOfDay) }

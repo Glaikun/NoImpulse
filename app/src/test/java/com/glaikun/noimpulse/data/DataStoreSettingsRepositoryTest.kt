@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
+import com.glaikun.noimpulse.model.TimeWindow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
@@ -162,6 +163,61 @@ class DataStoreSettingsRepositoryTest {
             mapOf("com.maps" to listOf(FrictionRule(FrictionType.TIMED_WAIT, 30))),
             repo.appFriction.first(),
         )
+    }
+
+    // ── Restricted Mode ──────────────────────────────────────────────────────
+
+    @Test
+    fun `restrictedModeEnabled defaults to false`() = runTest {
+        assertFalse(newRepo().restrictedModeEnabled.first())
+    }
+
+    @Test
+    fun `setRestrictedModeEnabled persists`() = runTest {
+        val repo = newRepo()
+        repo.setRestrictedModeEnabled(true)
+        assertTrue(repo.restrictedModeEnabled.first())
+        repo.setRestrictedModeEnabled(false)
+        assertFalse(repo.restrictedModeEnabled.first())
+    }
+
+    @Test
+    fun `allowedTimeWindows defaults to empty`() = runTest {
+        assertTrue(newRepo().allowedTimeWindows.first().isEmpty())
+    }
+
+    @Test
+    fun `allowed windows add, sort by start, and remove individually`() = runTest {
+        val repo = newRepo()
+        val morning = TimeWindow(7 * 60, 9 * 60)
+        val evening = TimeWindow(18 * 60, 22 * 60)
+
+        repo.addAllowedWindow(evening)
+        repo.addAllowedWindow(morning)
+        // Sorted by start minute regardless of insertion order.
+        assertEquals(listOf(morning, evening), repo.allowedTimeWindows.first())
+
+        // Adding a duplicate is a no-op (set semantics).
+        repo.addAllowedWindow(morning)
+        assertEquals(2, repo.allowedTimeWindows.first().size)
+
+        repo.removeAllowedWindow(morning)
+        assertEquals(listOf(evening), repo.allowedTimeWindows.first())
+    }
+
+    @Test
+    fun `allowedTimeWindows skips malformed entries`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[stringSetPreferencesKey("allowed_time_windows")] = setOf(
+                "540|1020",   // valid 09:00–17:00
+                "x|1020",     // non-int start
+                "540",        // wrong shape
+                "garbage",
+            )
+        }
+
+        assertEquals(listOf(TimeWindow(540, 1020)), repo.allowedTimeWindows.first())
     }
 
     // ── Drawer-launch counter ────────────────────────────────────────────────

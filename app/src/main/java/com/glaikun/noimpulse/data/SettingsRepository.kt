@@ -1,6 +1,7 @@
 package com.glaikun.noimpulse.data
 
 import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.TimeWindow
 import kotlinx.coroutines.flow.Flow
 
 /** On-device settings, backed by DataStore. Single source of truth for user prefs. */
@@ -24,6 +25,12 @@ interface SettingsRepository {
      */
     val drawerLaunchesToday: Flow<Int>
 
+    /** Whether Restricted Mode is on. When on, apps are unusable outside [allowedTimeWindows]. */
+    val restrictedModeEnabled: Flow<Boolean>
+
+    /** The time-of-day windows during which apps stay usable while Restricted Mode is on. */
+    val allowedTimeWindows: Flow<List<TimeWindow>>
+
     suspend fun setIntroSeen(seen: Boolean)
 
     suspend fun setSetupComplete(complete: Boolean)
@@ -38,4 +45,12 @@ interface SettingsRepository {
 
     /** Atomically: reset the counter to 1 if the stored date isn't today, else increment. */
     suspend fun recordDrawerLaunch()
+
+    suspend fun setRestrictedModeEnabled(enabled: Boolean)
+
+    /** Adds an allowed [window] (no-op if it already exists). */
+    suspend fun addAllowedWindow(window: TimeWindow)
+
+    /** Removes an allowed [window]. */
+    suspend fun removeAllowedWindow(window: TimeWindow)
 }

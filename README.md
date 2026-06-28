@@ -41,6 +41,8 @@ The whole interface is intentionally dull — visual calm is part of the point.
 - **Friction.** Launching a non-allowlisted app runs a sequence of small obstacles: a baseline "type these tokens" challenge that escalates with how much you've already drifted today, plus any extra friction you've chosen to stack on an app (a timed wait, a math problem, or reflection questions).
 - **Re-friction.** Returning to a friction-tracked app via Recents re-shows the gate, so the drawer isn't a one-time toll.
 - **Onboarding.** A short intro explains the launcher model, the deliberate friction, and the privacy posture, followed by a setup screen for permissions and the initial allowlist.
+- **Settings.** Reached from the gear in the app drawer. Re-grant permissions, re-prompt to make NoImpulse the default launcher (behind the same UUID gate as allowlisting), and configure Restricted Mode — all after onboarding.
+- **Restricted Mode.** An optional schedule of "allowed times" of day. While it's on and the clock is outside every allowed window, the phone is in *restricted time*: no app will open and returning to one bounces you back to the launcher with a "Currently in restricted time" notice. Inside an allowed window everything behaves normally.
 
 ## Architecture
 
@@ -78,7 +80,7 @@ Built with **Jetpack Compose** (the modern replacement for XML layouts) and **Ma
 This layer owns the data and is the single source of truth — the UI never reads files or databases directly.
 
 - **Repositories and sources** are plain Kotlin classes the rest of the app talks to. A `ViewModel` asks `SettingsRepository` for the allowed apps; it doesn't know or care where they're stored. Each interface lives beside its implementation in [`data/`](app/src/main/java/com/glaikun/noimpulse/data), and the plain data types they exchange live in [`model/`](app/src/main/java/com/glaikun/noimpulse/model).
-- **Jetpack DataStore (Preferences)** — replaces `SharedPreferences`. Holds the `introSeen`/`setupComplete` flags, the allowlist (a `Set<String>` of package names), per-app friction rules, and the date-keyed drawer-launch counter.
+- **Jetpack DataStore (Preferences)** — replaces `SharedPreferences`. Holds the `introSeen`/`setupComplete` flags, the allowlist (a `Set<String>` of package names), per-app friction rules, the date-keyed drawer-launch counter, and the Restricted Mode toggle plus its allowed time-of-day windows.
 - **Room** — planned for anything that needs structured rows or history (usage roll-ups, domain rules with timestamps). Not wired yet.
 - **System APIs** — `UsageStatsManager` (today's pickups + screen time), `PackageManager` (list installed apps, resolve the device's default Settings/Phone/Messages/Maps/Clock/Camera/Gallery for the first-run seed), `RoleManager` (the default-home prompt), and `AccessibilityService` (re-friction on foreground return).
 
@@ -102,8 +104,9 @@ app/src/main/java/com/glaikun/noimpulse/
 │   ├── AppEntry.kt              — (packageName, label) for an installed app
 │   ├── DailyUsage.kt            — pickup count + screen-on minutes for today
 │   ├── StatusSnapshot.kt        — system-status read (usage access, default-home, accessibility, usage)
-│   ├── SettingsSnapshot.kt      — persisted settings snapshot (intro flag, allowlist, friction map)
-│   └── Friction.kt              — FrictionType enum + FrictionRule data class
+│   ├── SettingsSnapshot.kt      — persisted settings snapshot (intro flag, allowlist, friction, restricted mode)
+│   ├── Friction.kt              — FrictionType enum + FrictionRule data class
+│   └── TimeWindow.kt            — a time-of-day window (minutes since midnight) for Restricted Mode
 ├── data/                        — repositories, system data sources, and the interfaces they implement
 │   ├── SettingsRepository.kt            — settings contract (allowlist, friction, counters)
 │   ├── DataStoreSettingsRepository.kt   — DataStore-backed implementation
@@ -124,11 +127,13 @@ app/src/main/java/com/glaikun/noimpulse/
     ├── HomeViewModel.kt         — single ViewModel; exposes navigation + UI state as StateFlow
     ├── AppIcon.kt               — renders a greyscale app icon from a PackageManager Drawable
     ├── FrictionGate.kt          — renders the friction sequence for an app (shared by drawer + re-friction)
-    ├── FrictionDialogs.kt       — friction-dialog Composables (timed wait, math, reflection, UUID gate)
+    ├── FrictionDialogs.kt       — friction-dialog Composables (timed wait, math, reflection, UUID gate, restricted-time notice)
+    ├── PermissionTiles.kt       — permission-request tiles shared by the Setup and Settings screens
     ├── screens/
     │   ├── HomeScreen.kt        — clock/date/battery/stats + allowlisted-app grid
     │   ├── IntroScreen.kt       — pre-setup explainer
-    │   └── SetupScreen.kt       — first-run permissions + allowlist seed
+    │   ├── SetupScreen.kt       — first-run permissions + allowlist seed
+    │   └── SettingsScreen.kt    — post-onboarding settings (permissions, switch launcher, Restricted Mode)
     ├── drawer/
     │   └── AppDrawerScreen.kt   — swipe-up drawer; every installed app + per-app friction options
     └── theme/                   — Material 3 colour, typography, theme
@@ -136,14 +141,13 @@ app/src/main/java/com/glaikun/noimpulse/
 
 ## Ideas
 
-The core app is built and usable: the minimalist launcher home screen, allowlist onboarding, an app drawer gated by escalating friction, and re-friction when a tracked app returns to the foreground.
+The core app is built and usable: the minimalist launcher home screen, allowlist onboarding, an app drawer gated by escalating friction, re-friction when a tracked app returns to the foreground, a post-onboarding settings screen, and Restricted Mode (allowed time-of-day windows enforced across the launcher).
 
 What follows is a loose backlog, not a commitment. Anything picked up should follow the [official Android architecture guidance](https://developer.android.com/topic/architecture) and the conventions already in this repo — the bar is readable, idiomatic, well-tested code over clever code.
 
 - **Website blocking.** Extend `FrictionWatchService` to check browser URLs against a domain allowlist. This requires flipping `canRetrieveWindowContent` to `true` — a deliberate trust change that needs its own consent copy.
-- **Settings screen.** Edit the allowlist and friction rules after onboarding.
+- **Per-app time-of-day rules.** Restricted Mode currently applies one global schedule to the whole launcher; a natural extension is per-app windows (e.g. work apps reachable only 9–5).
 - **Temporary unlock.** An "open for N minutes" cooldown for genuinely deliberate access.
-- **Time-of-day rules.** e.g. work apps reachable only 9–5.
 - **Usage history.** A trends screen built on `UsageStatsManager`.
 - **Tighter re-friction.** An idle-timer fallback for the case where the screen never turns off (the session ledger only clears on screen-off today), plus an optional decay curve that softens the per-day drawer-friction escalation over idle time.
 

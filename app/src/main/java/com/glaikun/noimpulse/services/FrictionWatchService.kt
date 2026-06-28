@@ -13,6 +13,9 @@ import com.glaikun.noimpulse.MainActivity
 import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.data.LauncherAppsSource
 import com.glaikun.noimpulse.data.SettingsRepository
+import com.glaikun.noimpulse.model.TimeWindow
+import com.glaikun.noimpulse.ui.isRestrictedNow
+import com.glaikun.noimpulse.ui.minuteOfDay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,7 +67,12 @@ class FrictionWatchService : AccessibilityService() {
      *  overlay and should never trigger re-friction. */
     @Volatile private var launchablePackages: Set<String> = emptySet()
 
+    /** Restricted Mode state, mirrored reactively so off-hours blocking is up to date. */
+    @Volatile private var restrictedModeEnabled: Boolean = false
+    @Volatile private var allowedWindows: List<TimeWindow> = emptyList()
+
     private var allowedCollector: Job? = null
+    private var restrictedCollector: Job? = null
 
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -108,6 +116,14 @@ class FrictionWatchService : AccessibilityService() {
             settings.allowedPackages.collect { allowed -> allowedPackages = allowed }
         }
 
+        // Restricted Mode is reactive too — toggling it or its windows takes effect at once.
+        restrictedCollector = scope.launch {
+            settings.restrictedModeEnabled.collect { restrictedModeEnabled = it }
+        }
+        scope.launch {
+            settings.allowedTimeWindows.collect { allowedWindows = it }
+        }
+
         val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(screenOffReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -127,6 +143,7 @@ class FrictionWatchService : AccessibilityService() {
                 allowedPackages = allowedPackages,
                 launchablePackages = launchablePackages,
                 isInSession = ledger::isInSession,
+                restrictedNow = isRestrictedNow(restrictedModeEnabled, allowedWindows, minuteOfDay()),
             )
         ) return
 
@@ -147,6 +164,7 @@ class FrictionWatchService : AccessibilityService() {
         Log.i(TAG, "Service destroyed")
         runCatching { unregisterReceiver(screenOffReceiver) }
         allowedCollector?.cancel()
+        restrictedCollector?.cancel()
         scope.cancel()
         super.onDestroy()
     }
@@ -163,9 +181,11 @@ class FrictionWatchService : AccessibilityService() {
  *
  * Skip rules (in order):
  *  1. our own package — the gate itself, the launcher home, etc.
- *  2. allowlisted apps — no friction by design.
- *  3. non-launchable packages — system overlays, IMEs, lock screen.
- *  4. packages already in the current screen-on session.
+ *  2. non-launchable packages — system overlays, IMEs, lock screen.
+ *  3. [restrictedNow] — when in restricted time, every other launchable app is bounced,
+ *     ignoring the allowlist and the session (the point is to make apps unusable).
+ *  4. allowlisted apps — no friction by design.
+ *  5. packages already in the current screen-on session.
  */
 internal fun shouldTriggerRefriction(
     packageName: String,
@@ -173,10 +193,12 @@ internal fun shouldTriggerRefriction(
     allowedPackages: Set<String>,
     launchablePackages: Set<String>,
     isInSession: (String) -> Boolean,
+    restrictedNow: Boolean,
 ): Boolean = when {
     packageName == ownPackageName -> false
-    packageName in allowedPackages -> false
     packageName !in launchablePackages -> false
+    restrictedNow -> true
+    packageName in allowedPackages -> false
     isInSession(packageName) -> false
     else -> true
 }
