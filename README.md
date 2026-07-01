@@ -165,12 +165,12 @@ actor allowed past the branch rulesets (it authenticates as the `release-bot` de
 
 Cutting a release:
 
-1. Make sure `develop` holds the `versionName` you want to ship (in [app/build.gradle.kts](app/build.gradle.kts)).
-2. Dispatch **Release** and choose how `develop` should be bumped *afterwards* (`major`/`minor`/`patch`).
+1. Confirm the current `versionName` on `develop` (in [app/build.gradle.kts](app/build.gradle.kts)) — the workflow bumps *from* it.
+2. Dispatch **Release** and choose how to bump for this release (`major`/`minor`/`patch`).
 
-The workflow then runs the unit tests, fast-forward-merges `develop` into `master`, tags and
-publishes that version (with the APK attached to a GitHub Release), and finally bumps `develop` to
-the next development version. So `master` lands on the released version while `develop` moves ahead.
+The workflow runs the unit tests, bumps `develop`'s `versionName` and `versionCode` and commits
+`Release X.Y.Z`, fast-forward-merges that commit into `master`, then tags and publishes the release
+(with the APK attached to a GitHub Release). `master` and `develop` end at the same commit.
 
 Prerequisites (one-time): the `RELEASE_SSH_KEY` secret (private half of the write-enabled
 `release-bot` deploy key). For an installable, signed APK, also set the `KEYSTORE_BASE64`,

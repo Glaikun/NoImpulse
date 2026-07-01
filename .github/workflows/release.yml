@@ -1,8 +1,8 @@
 name: Release
 
-# Manual release. Releases the version develop currently holds: merges develop into master,
-# tags + publishes that version, then bumps develop to the next development version.
-# Pick how develop's version should be bumped *after* the release when you run the workflow.
+# Manual release. The workflow bumps develop's version to the release version first, then merges
+# that commit into master and tags + publishes it. Pick how to bump the version (major/minor/patch)
+# when you dispatch. After the run, master and develop sit at the same "Release X.Y.Z" commit.
 #
 # Requires the `RELEASE_SSH_KEY` secret (private half of the "release-bot" deploy key). All
 # branch pushes below are authenticated as that deploy key, which is the only actor allowed
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       release_type:
-        description: How to bump develop's version AFTER the release
+        description: How to bump the version for this release
         type: choice
         required: true
         default: minor
@@ -55,27 +55,51 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
 
-      # The version currently on develop is the one we release. Read it before anything changes.
+      # Bump develop's versionName (per release_type) and versionCode (+1). This commit IS the
+      # release commit — master will fast-forward to it and the tag will point at it.
       # versionName is treated as semver (MAJOR.MINOR.PATCH); a two-part "1.0" reads as 1.0.0.
-      - name: Read release version
+      - name: Bump develop to release version
         id: version
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
         run: |
           set -euo pipefail
           GRADLE_FILE=app/build.gradle.kts
-          name=$(sed -nE 's/.*versionName *= *"([^"]+)".*/\1/p' "$GRADLE_FILE")
-          code=$(sed -nE 's/.*versionCode *= *([0-9]+).*/\1/p' "$GRADLE_FILE")
-          echo "Releasing $name (code $code)"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "tag=v$name" >> "$GITHUB_OUTPUT"
+
+          current_name=$(sed -nE 's/.*versionName *= *"([^"]+)".*/\1/p' "$GRADLE_FILE")
+          current_code=$(sed -nE 's/.*versionCode *= *([0-9]+).*/\1/p' "$GRADLE_FILE")
+
+          IFS='.' read -r major minor patch <<< "$current_name" || true
+          major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
+
+          case "$RELEASE_TYPE" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          new_name="$major.$minor.$patch"
+          new_code=$((current_code + 1))
+
+          git config user.name "noimpulse-release-bot"
+          git config user.email "noimpulse-release-bot@users.noreply.github.com"
+
+          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$new_name\"/" "$GRADLE_FILE"
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $new_code/" "$GRADLE_FILE"
+          git add "$GRADLE_FILE"
+          git commit -m "Release $new_name"
+          git push origin develop
+
+          echo "Releasing $new_name (code $new_code)"
+          echo "name=$new_name" >> "$GITHUB_OUTPUT"
+          echo "code=$new_code" >> "$GITHUB_OUTPUT"
+          echo "tag=v$new_name" >> "$GITHUB_OUTPUT"
 
       # master only ever advances through this workflow, so the merge must be a fast-forward of
       # develop. A non-ff failure stops the run loudly rather than rewriting history.
       - name: Merge develop into master
         run: |
           set -euo pipefail
-          git config user.name "noimpulse-release-bot"
-          git config user.email "noimpulse-release-bot@users.noreply.github.com"
           git checkout master
           git merge --ff-only origin/develop
 
@@ -138,33 +162,3 @@ jobs:
             notes="${notes}"$'\n\n'"> ⚠️ This APK is **unsigned** and cannot be installed directly. Configure the \`KEYSTORE_BASE64\`, \`KEYSTORE_PASSWORD\`, \`KEY_ALIAS\`, and \`KEY_PASSWORD\` repository secrets to publish a signed APK."
           fi
           gh release create "$TAG" "$APK" --title "$TAG" --notes "$notes"
-
-      # Open the next development version on develop. The deploy key bypasses develop's PR rule.
-      - name: Bump develop to next version
-        env:
-          RELEASE_TYPE: ${{ inputs.release_type }}
-          CURRENT_NAME: ${{ steps.version.outputs.name }}
-          CURRENT_CODE: ${{ steps.version.outputs.code }}
-        run: |
-          set -euo pipefail
-          GRADLE_FILE=app/build.gradle.kts
-
-          IFS='.' read -r major minor patch <<< "$CURRENT_NAME" || true
-          major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
-
-          case "$RELEASE_TYPE" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-
-          new_name="$major.$minor.$patch"
-          new_code=$((CURRENT_CODE + 1))
-
-          git checkout develop
-          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$new_name\"/" "$GRADLE_FILE"
-          sed -i -E "s/versionCode = [0-9]+/versionCode = $new_code/" "$GRADLE_FILE"
-          git add "$GRADLE_FILE"
-          git commit -m "Start next development version $new_name"
-          git push origin develop
-          echo "develop now at $new_name (code $new_code)"
