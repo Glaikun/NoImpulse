@@ -27,6 +27,13 @@ interface SettingsRepository {
      */
     val drawerLaunchesToday: Flow<Int>
 
+    /**
+     * Today's drawer-launch count per package, for the daily-launches limit friction.
+     * Emits an empty map when the persisted date is stale — the next [recordAppLaunch]
+     * will atomically reset and record today's first launch.
+     */
+    val appLaunchesToday: Flow<Map<String, Int>>
+
     /** Whether Restricted Mode is on. When on, apps are unusable outside [allowedTimeWindows]. */
     val restrictedModeEnabled: Flow<Boolean>
 
@@ -53,6 +60,9 @@ interface SettingsRepository {
 
     /** Atomically: reset the counter to 1 if the stored date isn't today, else increment. */
     suspend fun recordDrawerLaunch()
+
+    /** Same day-keyed reset-or-increment as [recordDrawerLaunch], but per [packageName]. */
+    suspend fun recordAppLaunch(packageName: String)
 
     suspend fun setRestrictedModeEnabled(enabled: Boolean)
 

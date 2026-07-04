@@ -65,10 +65,11 @@ class HomeViewModelTest {
         launcher: LauncherAppsSource = FakeLauncherAppsSource(),
         settings: SettingsRepository = FakeSettingsRepository(setupComplete = true),
         accessibility: AccessibilityStatusSource = FakeAccessibilityStatusSource(),
+        usageStats: UsageStatsSource = FakeUsageStatsSource(usage),
     ): HomeViewModel {
         val vm = HomeViewModel(
             app = ApplicationProvider.getApplicationContext(),
-            usageStats = FakeUsageStatsSource(usage),
+            usageStats = usageStats,
             launcher = launcher,
             settings = settings,
             accessibility = accessibility,
@@ -516,6 +517,57 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `recordDrawerLaunch bumps the per-app count for the launched package`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = activeViewModel(null, settings = settings)
+
+        vm.recordDrawerLaunch("com.twitter")
+        vm.recordDrawerLaunch("com.twitter")
+        vm.recordDrawerLaunch("com.reddit")
+        runCurrent()
+
+        assertEquals(
+            mapOf("com.twitter" to 2, "com.reddit" to 1),
+            vm.state.value.appLaunchesToday,
+        )
+    }
+
+    @Test
+    fun `state appUsageMinutesToday reflects the usage source, for the daily-minutes limit`() = runTest {
+        val usage = DailyUsage(pickupCount = 1, screenOnMinutes = 50)
+        val vm = activeViewModel(
+            usage,
+            usageStats = FakeUsageStatsSource(
+                usage,
+                foregroundMinutes = mapOf("com.twitter" to 42, "com.reddit" to 5),
+            ),
+        )
+
+        assertEquals(
+            mapOf("com.twitter" to 42, "com.reddit" to 5),
+            vm.state.value.appUsageMinutesToday,
+        )
+    }
+
+    @Test
+    fun `state appUsageMinutesToday is empty when the usage source has no data`() = runTest {
+        val vm = activeViewModel(null)
+
+        assertTrue(vm.state.value.appUsageMinutesToday.isEmpty())
+    }
+
+    @Test
+    fun `recordDrawerLaunch does NOT bump the per-app count for an allowlisted package`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true, allowed = setOf("com.twitter"))
+        val vm = activeViewModel(null, settings = settings)
+
+        vm.recordDrawerLaunch("com.twitter")
+        runCurrent()
+
+        assertTrue(vm.state.value.appLaunchesToday.isEmpty())
+    }
+
+    @Test
     fun `recordDrawerLaunch does NOT increment for allowlisted package`() = runTest {
         val launcher = FakeLauncherAppsSource(
             installed = listOf(AppEntry("Twitter", "com.twitter")),
@@ -657,6 +709,22 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `requestRefriction carries the watcher's over-limit verdict into the screen`() = runTest {
+        val vm = activeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+        )
+        val limit = FrictionRule(FrictionType.DAILY_MINUTES, 30)
+
+        vm.requestRefriction("com.twitter.android", overLimit = limit)
+
+        assertEquals(
+            AppScreen.Refriction("com.twitter.android", overLimit = limit),
+            vm.screen.value,
+        )
+    }
+
+    @Test
     fun `resolveRefriction returns screen to Home`() = runTest {
         val vm = activeViewModel(
             usage = null,
@@ -710,10 +778,12 @@ private class FakeUsageStatsSource(
     private val result: DailyUsage?,
     private val granted: Boolean = result != null,
     private val recents: List<String> = emptyList(),
+    private val foregroundMinutes: Map<String, Int> = emptyMap(),
 ) : UsageStatsSource {
     override fun hasUsageAccess(): Boolean = granted
     override fun queryToday(): DailyUsage? = result
     override fun recentlyUsedPackages(): List<String> = recents
+    override fun foregroundMinutesToday(): Map<String, Int> = foregroundMinutes
 }
 
 /** Usage source whose access can be flipped on at runtime, for refresh tests. */
@@ -729,6 +799,7 @@ private class MutableUsageStatsSource : UsageStatsSource {
     override fun hasUsageAccess(): Boolean = granted
     override fun queryToday(): DailyUsage? = if (granted) result else null
     override fun recentlyUsedPackages(): List<String> = emptyList()
+    override fun foregroundMinutesToday(): Map<String, Int> = emptyMap()
 }
 
 private class FakeLauncherAppsSource(
@@ -757,6 +828,7 @@ private class FakeSettingsRepository(
     private val _setupComplete = MutableStateFlow(setupComplete)
     private val _allowed = MutableStateFlow(allowed)
     private val _drawerLaunches = MutableStateFlow(drawerLaunches)
+    private val _appLaunches = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val _appFriction = MutableStateFlow<Map<String, List<FrictionRule>>>(emptyMap())
     private val _restrictedModeEnabled = MutableStateFlow(false)
     private val _allowedTimeWindows = MutableStateFlow<List<TimeWindow>>(emptyList())
@@ -768,6 +840,7 @@ private class FakeSettingsRepository(
     override val allowedPackages: Flow<Set<String>> = _allowed
     override val appFriction: Flow<Map<String, List<FrictionRule>>> = _appFriction
     override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
+    override val appLaunchesToday: Flow<Map<String, Int>> = _appLaunches
     override val restrictedModeEnabled: Flow<Boolean> = _restrictedModeEnabled
     override val allowedTimeWindows: Flow<List<TimeWindow>> = _allowedTimeWindows
     override val themeMode: Flow<ThemeMode> = _themeMode
@@ -802,6 +875,11 @@ private class FakeSettingsRepository(
 
     override suspend fun recordDrawerLaunch() {
         _drawerLaunches.value = _drawerLaunches.value + 1
+    }
+
+    override suspend fun recordAppLaunch(packageName: String) {
+        val current = _appLaunches.value[packageName] ?: 0
+        _appLaunches.value = _appLaunches.value + (packageName to current + 1)
     }
 
     override suspend fun setRestrictedModeEnabled(enabled: Boolean) {

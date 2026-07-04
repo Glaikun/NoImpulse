@@ -1,5 +1,7 @@
 package com.glaikun.noimpulse.ui
 
+import com.glaikun.noimpulse.model.FrictionRule
+
 /**
  * Every routable screen in the app, modelled as a sealed hierarchy so the `when`
  * the Activity uses to render is checked for exhaustiveness by the compiler.
@@ -28,8 +30,10 @@ sealed interface AppScreen {
     data object Settings : AppScreen
 
     /** Re-friction is being run for [packageName], typically because the user
-     *  returned to it via Recents after a screen-off cycle. */
-    data class Refriction(val packageName: String) : AppScreen
+     *  returned to it via Recents after a screen-off cycle. [overLimit] carries the
+     *  watcher's verdict when the app has exceeded a daily limit — the UI then shows
+     *  the block notice instead of a passable gate. */
+    data class Refriction(val packageName: String, val overLimit: FrictionRule? = null) : AppScreen
 }
 
 /** All inputs that can drive a transition between [AppScreen]s. */
@@ -55,8 +59,12 @@ sealed interface AppEvent {
     /** User left the settings screen (back press). */
     data object CloseSettings : AppEvent
 
-    /** Accessibility service spotted a foreground change that needs friction. */
-    data class RefrictionRequested(val packageName: String) : AppEvent
+    /** Accessibility service spotted a foreground change that needs friction.
+     *  [overLimit] is the daily limit the package has exceeded, if any. */
+    data class RefrictionRequested(
+        val packageName: String,
+        val overLimit: FrictionRule? = null,
+    ) : AppEvent
 
     /** Re-friction completed (passed or cancelled) — caller decides what to launch. */
     data object RefrictionResolved : AppEvent
@@ -81,6 +89,6 @@ fun nextScreen(current: AppScreen, event: AppEvent): AppScreen = when (event) {
     AppEvent.CloseDrawer -> if (current == AppScreen.Drawer) AppScreen.Home else current
     AppEvent.OpenSettings -> AppScreen.Settings
     AppEvent.CloseSettings -> AppScreen.Home
-    is AppEvent.RefrictionRequested -> AppScreen.Refriction(event.packageName)
+    is AppEvent.RefrictionRequested -> AppScreen.Refriction(event.packageName, event.overLimit)
     AppEvent.RefrictionResolved -> AppScreen.Home
 }

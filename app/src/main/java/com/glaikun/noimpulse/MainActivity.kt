@@ -32,11 +32,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.ui.drawer.AppDrawerScreen
 import com.glaikun.noimpulse.ui.AppScreen
+import com.glaikun.noimpulse.ui.DailyLimitDialog
 import com.glaikun.noimpulse.ui.FrictionGate
 import com.glaikun.noimpulse.ui.RestrictedTimeDialog
+import com.glaikun.noimpulse.ui.exceededDailyLimit
 import com.glaikun.noimpulse.ui.screens.HomeScreen
 import com.glaikun.noimpulse.ui.HomeViewModel
 import com.glaikun.noimpulse.ui.screens.IntroScreen
@@ -154,6 +158,8 @@ class MainActivity : ComponentActivity() {
                             loadIcon = vm::loadIcon,
                             onSetAppAllowed = vm::setAppAllowed,
                             appFriction = state.appFriction,
+                            appLaunchesToday = state.appLaunchesToday,
+                            appUsageMinutesToday = state.appUsageMinutesToday,
                             onAddAppFriction = vm::addAppFriction,
                             onRemoveAppFriction = vm::removeAppFriction,
                             onOpenSettings = vm::openSettings,
@@ -169,12 +175,24 @@ class MainActivity : ComponentActivity() {
                         val app = installedApps.firstOrNull { it.packageName == pkg }
                             ?: AppEntry(pkg, pkg)
                         BackHandler { vm.resolveRefriction() }
-                        if (state.isRestrictedNow) {
-                            // Restricted time: there's no gate to pass — just show the notice
-                            // and send the user back to the launcher home.
-                            RestrictedTimeDialog(onDismiss = vm::resolveRefriction)
-                        } else {
-                            FrictionGate(
+                        // Prefer the watcher's verdict carried in the intent: the cached
+                        // state is stale right after a long app session, and the gate must
+                        // not flash passable when the app is actually over its limit. The
+                        // state-computed check stays as a fallback for verdict-less paths.
+                        val overLimit = s.overLimit ?: exceededDailyLimit(
+                            rules = state.appFriction[pkg].orEmpty(),
+                            launchesToday = state.appLaunchesToday[pkg] ?: 0,
+                            minutesToday = state.appUsageMinutesToday[pkg] ?: 0,
+                        )
+                        when {
+                            state.isRestrictedNow ->
+                                // Restricted time: there's no gate to pass — just show the
+                                // notice and send the user back to the launcher home.
+                                RestrictedTimeDialog(onDismiss = vm::resolveRefriction)
+                            overLimit != null ->
+                                // Over a daily limit: blocked until midnight, same shape.
+                                DailyLimitDialog(app = app, rule = overLimit, onDismiss = vm::resolveRefriction)
+                            else -> FrictionGate(
                                 app = app,
                                 rules = state.appFriction[pkg].orEmpty(),
                                 drawerLaunchesToday = state.drawerLaunchesToday,
@@ -204,12 +222,24 @@ class MainActivity : ComponentActivity() {
         consumeRefrictionExtra(intent)
     }
 
-    /** Reads the re-friction extra and forwards it to the FSM if present. */
+    /** Reads the re-friction extras and forwards them to the FSM if present. */
     private fun consumeRefrictionExtra(intent: Intent?) {
         val pkg = intent?.getStringExtra(EXTRA_REFRICTION_PACKAGE) ?: return
         intent.removeExtra(EXTRA_REFRICTION_PACKAGE)
+        val overLimit = readLimitExtras(intent)
         Log.d(TAG, "Re-friction requested for $pkg")
-        vm.requestRefriction(pkg)
+        vm.requestRefriction(pkg, overLimit)
+    }
+
+    /** The exceeded daily limit the watcher attached, or null when absent/malformed. */
+    private fun readLimitExtras(intent: Intent): FrictionRule? {
+        val typeName = intent.getStringExtra(EXTRA_REFRICTION_LIMIT_TYPE) ?: return null
+        val param = intent.getIntExtra(EXTRA_REFRICTION_LIMIT_PARAM, -1)
+        intent.removeExtra(EXTRA_REFRICTION_LIMIT_TYPE)
+        intent.removeExtra(EXTRA_REFRICTION_LIMIT_PARAM)
+        if (param < 0) return null
+        val type = runCatching { FrictionType.valueOf(typeName) }.getOrNull() ?: return null
+        return FrictionRule(type, param)
     }
 
     /** Opens the system Usage Access screen so the user can grant PACKAGE_USAGE_STATS. */
@@ -253,6 +283,12 @@ class MainActivity : ComponentActivity() {
         /** Intent extra used by [com.glaikun.noimpulse.services.FrictionWatchService] to
          *  request that the gate be re-shown for the named package. */
         const val EXTRA_REFRICTION_PACKAGE = "com.glaikun.noimpulse.REFRICTION_PACKAGE"
+
+        /** Optional companions to [EXTRA_REFRICTION_PACKAGE]: the daily limit the package
+         *  has exceeded ([com.glaikun.noimpulse.model.FrictionType] name + its param), so
+         *  the block notice shows without waiting for a fresh usage read. */
+        const val EXTRA_REFRICTION_LIMIT_TYPE = "com.glaikun.noimpulse.REFRICTION_LIMIT_TYPE"
+        const val EXTRA_REFRICTION_LIMIT_PARAM = "com.glaikun.noimpulse.REFRICTION_LIMIT_PARAM"
     }
 }
 

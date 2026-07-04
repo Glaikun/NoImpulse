@@ -7,6 +7,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.glaikun.noimpulse.model.AppEntry
@@ -121,6 +122,129 @@ class AppDrawerScreenTest {
 
         rule.onNodeWithTag("drawerApp_${app.packageName}").performTouchInput { longClick() }
         rule.onNodeWithTag("timedWait_60").performClick()
+
+        rule.onNodeWithTag("confirmAddFriction").assertIsDisplayed()
+        rule.onAllNodesWithTag("uuidInput").assertCountEquals(0)
+    }
+
+    @Test
+    fun overTheDailyLimitShowsTheBlockNoticeInsteadOfTheGate() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 3,
+                appFriction = mapOf(
+                    app.packageName to listOf(FrictionRule(FrictionType.DAILY_LAUNCHES, 3)),
+                ),
+                appLaunchesToday = mapOf(app.packageName to 3),
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performClick()
+
+        rule.onNodeWithTag("dailyLimitNotice").assertIsDisplayed()
+        rule.onAllNodesWithTag("challengeInput").assertCountEquals(0)
+    }
+
+    @Test
+    fun underTheDailyLimitTheFrictionGateShowsAsUsual() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 2,
+                appFriction = mapOf(
+                    app.packageName to listOf(FrictionRule(FrictionType.DAILY_LAUNCHES, 3)),
+                ),
+                appLaunchesToday = mapOf(app.packageName to 2),
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performClick()
+
+        rule.onNodeWithTag("challengeInput").assertIsDisplayed()
+        rule.onAllNodesWithTag("dailyLimitNotice").assertCountEquals(0)
+    }
+
+    @Test
+    fun overTheDailyMinutesLimitShowsTheBlockNoticeInsteadOfTheGate() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 0,
+                appFriction = mapOf(
+                    app.packageName to listOf(FrictionRule(FrictionType.DAILY_MINUTES, 30)),
+                ),
+                appUsageMinutesToday = mapOf(app.packageName to 30),
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performClick()
+
+        rule.onNodeWithTag("dailyLimitNotice").assertIsDisplayed()
+        rule.onAllNodesWithTag("challengeInput").assertCountEquals(0)
+    }
+
+    @Test
+    fun underTheDailyMinutesLimitTheFrictionGateShowsAsUsual() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 0,
+                appFriction = mapOf(
+                    app.packageName to listOf(FrictionRule(FrictionType.DAILY_MINUTES, 30)),
+                ),
+                appUsageMinutesToday = mapOf(app.packageName to 29),
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performClick()
+
+        rule.onNodeWithTag("challengeInput").assertIsDisplayed()
+        rule.onAllNodesWithTag("dailyLimitNotice").assertCountEquals(0)
+    }
+
+    @Test
+    fun looseningTheDailyLimitRequiresTheUuidGate() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 0,
+                appFriction = mapOf(
+                    app.packageName to listOf(FrictionRule(FrictionType.DAILY_LAUNCHES, 1)),
+                ),
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performTouchInput { longClick() }
+        rule.onNodeWithTag("dailyLimit_DAILY_LAUNCHES_3").performScrollTo().performClick()
+
+        rule.onNodeWithTag("uuidInput").assertIsDisplayed()
+        rule.onAllNodesWithTag("confirmAddFriction").assertCountEquals(0)
+    }
+
+    @Test
+    fun firstDailyLimitOnlyNeedsTheLightConfirm() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 0,
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performTouchInput { longClick() }
+        rule.onNodeWithTag("dailyLimit_DAILY_MINUTES_30").performScrollTo().performClick()
 
         rule.onNodeWithTag("confirmAddFriction").assertIsDisplayed()
         rule.onAllNodesWithTag("uuidInput").assertCountEquals(0)

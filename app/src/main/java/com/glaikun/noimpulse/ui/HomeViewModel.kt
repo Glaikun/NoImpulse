@@ -75,6 +75,10 @@ class HomeViewModel @Inject constructor(
         val homeApps: List<AppEntry> = emptyList(),
         val appFriction: Map<String, List<FrictionRule>> = emptyMap(),
         val drawerLaunchesToday: Int = 0,
+        /** Today's drawer-launch count per package, for the daily-launches limit. */
+        val appLaunchesToday: Map<String, Int> = emptyMap(),
+        /** Today's foreground minutes per package, for the daily-minutes limit. */
+        val appUsageMinutesToday: Map<String, Int> = emptyMap(),
         val restrictedModeEnabled: Boolean = false,
         val allowedWindows: List<TimeWindow> = emptyList(),
         /** True when Restricted Mode is on and the current time is outside every allowed window. */
@@ -106,8 +110,8 @@ class HomeViewModel @Inject constructor(
     fun closeDrawer() = dispatch(AppEvent.CloseDrawer)
     fun openSettings() = dispatch(AppEvent.OpenSettings)
     fun closeSettings() = dispatch(AppEvent.CloseSettings)
-    fun requestRefriction(packageName: String) =
-        dispatch(AppEvent.RefrictionRequested(packageName))
+    fun requestRefriction(packageName: String, overLimit: FrictionRule? = null) =
+        dispatch(AppEvent.RefrictionRequested(packageName, overLimit))
     fun resolveRefriction() = dispatch(AppEvent.RefrictionResolved)
 
     /** Synchronous; must run before the target app is launched. */
@@ -164,6 +168,8 @@ class HomeViewModel @Inject constructor(
                 homeApps = homeApps,
                 appFriction = settingsSnap.appFriction,
                 drawerLaunchesToday = status.drawerLaunchesToday,
+                appLaunchesToday = status.appLaunchesToday,
+                appUsageMinutesToday = status.appUsageMinutes,
                 restrictedModeEnabled = settingsSnap.restrictedModeEnabled,
                 allowedWindows = settingsSnap.allowedWindows,
                 isRestrictedNow = isRestrictedNow(
@@ -282,6 +288,7 @@ class HomeViewModel @Inject constructor(
             val allowed = settings.allowedPackages.first()
             if (packageName !in allowed) {
                 settings.recordDrawerLaunch()
+                settings.recordAppLaunch(packageName)
             }
         }
     }
@@ -356,26 +363,31 @@ class HomeViewModel @Inject constructor(
                         isDefaultHome = launcher.isDefaultHome(),
                         accessibilityGranted = accessibility.isFrictionWatchEnabled(),
                         usage = usageStats.queryToday(),
+                        appUsageMinutes = usageStats.foregroundMinutesToday(),
                     )
                 }
                 .flowOn(ioDispatcher),
             settings.drawerLaunchesToday,
-        ) { readings, drawerCount ->
+            settings.appLaunchesToday,
+        ) { readings, drawerCount, appLaunches ->
             StatusSnapshot(
                 usageGranted = readings.usageGranted,
                 isDefaultHome = readings.isDefaultHome,
                 accessibilityGranted = readings.accessibilityGranted,
                 usage = readings.usage,
                 drawerLaunchesToday = drawerCount,
+                appLaunchesToday = appLaunches,
+                appUsageMinutes = readings.appUsageMinutes,
             )
         }
 
-    /** Internal bundle so we can carry four fields out of a single IO read. */
+    /** Internal bundle so we can carry five fields out of a single IO read. */
     private data class StatusReadings(
         val usageGranted: Boolean,
         val isDefaultHome: Boolean,
         val accessibilityGranted: Boolean,
         val usage: com.glaikun.noimpulse.model.DailyUsage?,
+        val appUsageMinutes: Map<String, Int>,
     )
 
     private fun statusPollTicks(): Flow<Unit> = flow {

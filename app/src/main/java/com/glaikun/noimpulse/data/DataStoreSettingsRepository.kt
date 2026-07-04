@@ -71,6 +71,18 @@ class DataStoreSettingsRepository @Inject constructor(
             }
         }
 
+    override val appLaunchesToday: Flow<Map<String, Int>> =
+        dataStore.data.map { prefs ->
+            val today = LocalDate.now().toString()
+            if (prefs[Keys.APP_LAUNCHES_DATE] == today) {
+                (prefs[Keys.APP_LAUNCHES_TODAY] ?: emptySet())
+                    .mapNotNull(::decodeLaunchCount)
+                    .toMap()
+            } else {
+                emptyMap()
+            }
+        }
+
     override suspend fun setIntroSeen(seen: Boolean) {
         dataStore.edit { it[Keys.INTRO_SEEN] = seen }
     }
@@ -111,6 +123,24 @@ class DataStoreSettingsRepository @Inject constructor(
         }
     }
 
+    override suspend fun recordAppLaunch(packageName: String) {
+        val today = LocalDate.now().toString()
+        dataStore.edit { prefs ->
+            val sameDay = prefs[Keys.APP_LAUNCHES_DATE] == today
+            val counts = if (sameDay) {
+                (prefs[Keys.APP_LAUNCHES_TODAY] ?: emptySet())
+                    .mapNotNull(::decodeLaunchCount)
+                    .toMap()
+            } else {
+                emptyMap()
+            }
+            val updated = counts + (packageName to (counts[packageName] ?: 0) + 1)
+            prefs[Keys.APP_LAUNCHES_TODAY] =
+                updated.mapTo(HashSet()) { (pkg, count) -> encodeLaunchCount(pkg, count) }
+            if (!sameDay) prefs[Keys.APP_LAUNCHES_DATE] = today
+        }
+    }
+
     override suspend fun setRestrictedModeEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.RESTRICTED_MODE_ENABLED] = enabled }
     }
@@ -144,6 +174,8 @@ class DataStoreSettingsRepository @Inject constructor(
         val APP_FRICTION = stringSetPreferencesKey("app_friction")
         val DRAWER_LAUNCHES_TODAY = intPreferencesKey("drawer_launches_today")
         val DRAWER_COUNTER_DATE = stringPreferencesKey("drawer_counter_date")
+        val APP_LAUNCHES_TODAY = stringSetPreferencesKey("app_launches_today")
+        val APP_LAUNCHES_DATE = stringPreferencesKey("app_launches_date")
         val RESTRICTED_MODE_ENABLED = booleanPreferencesKey("restricted_mode_enabled")
         val ALLOWED_TIME_WINDOWS = stringSetPreferencesKey("allowed_time_windows")
         val THEME_MODE = stringPreferencesKey("theme_mode")
@@ -162,6 +194,17 @@ private fun decodeFriction(encoded: String): Pair<String, FrictionRule>? {
     val type = FrictionType.entries.find { it.name == parts[1] } ?: return null
     val param = parts[2].toIntOrNull() ?: return null
     return parts[0] to FrictionRule(type, param)
+}
+
+/** Encodes a per-app launch count as "package|count". Package names never contain '|'. */
+private fun encodeLaunchCount(packageName: String, count: Int): String = "$packageName|$count"
+
+/** Inverse of [encodeLaunchCount]; returns null for malformed entries. */
+private fun decodeLaunchCount(encoded: String): Pair<String, Int>? {
+    val parts = encoded.split('|')
+    if (parts.size != 2) return null
+    val count = parts[1].toIntOrNull() ?: return null
+    return parts[0] to count
 }
 
 /** Encodes a window as "start|end" (minutes since midnight). */

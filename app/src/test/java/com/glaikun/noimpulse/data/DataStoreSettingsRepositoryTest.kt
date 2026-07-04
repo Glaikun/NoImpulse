@@ -39,6 +39,8 @@ class DataStoreSettingsRepositoryTest {
     // intended coupling.
     private val drawerCountKey = intPreferencesKey("drawer_launches_today")
     private val drawerDateKey = stringPreferencesKey("drawer_counter_date")
+    private val appLaunchesKey = stringSetPreferencesKey("app_launches_today")
+    private val appLaunchesDateKey = stringPreferencesKey("app_launches_date")
 
     /** Builds a repository over a fresh, test-scoped DataStore file. */
     private fun TestScope.newRepo(): SettingsRepository = newRepoWithStore().first
@@ -317,5 +319,57 @@ class DataStoreSettingsRepositoryTest {
         val prefs = store.data.first()
         assertEquals(LocalDate.now().toString(), prefs[drawerDateKey])
         assertEquals(1, prefs[drawerCountKey])
+    }
+
+    // ── Per-app launch counter (daily-launches limit) ────────────────────────
+
+    @Test
+    fun `appLaunchesToday defaults to empty`() = runTest {
+        assertTrue(newRepo().appLaunchesToday.first().isEmpty())
+    }
+
+    @Test
+    fun `recordAppLaunch counts per package within the same day`() = runTest {
+        val repo = newRepo()
+        repo.recordAppLaunch("com.twitter")
+        repo.recordAppLaunch("com.twitter")
+        repo.recordAppLaunch("com.maps")
+
+        assertEquals(mapOf("com.twitter" to 2, "com.maps" to 1), repo.appLaunchesToday.first())
+    }
+
+    @Test
+    fun `appLaunchesToday emits empty when stored date is yesterday`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[appLaunchesKey] = setOf("com.twitter|5")
+            prefs[appLaunchesDateKey] = LocalDate.now().minusDays(1).toString()
+        }
+
+        assertTrue(repo.appLaunchesToday.first().isEmpty())
+    }
+
+    @Test
+    fun `recordAppLaunch resets counts when stored date is yesterday`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[appLaunchesKey] = setOf("com.twitter|5")
+            prefs[appLaunchesDateKey] = LocalDate.now().minusDays(1).toString()
+        }
+
+        repo.recordAppLaunch("com.twitter")
+
+        assertEquals(mapOf("com.twitter" to 1), repo.appLaunchesToday.first())   // reset, not 6
+    }
+
+    @Test
+    fun `appLaunchesToday skips malformed entries`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[appLaunchesKey] = setOf("com.twitter|3", "com.bad|x", "garbage")
+            prefs[appLaunchesDateKey] = LocalDate.now().toString()
+        }
+
+        assertEquals(mapOf("com.twitter" to 3), repo.appLaunchesToday.first())
     }
 }

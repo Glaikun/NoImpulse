@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionKind
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
 import java.util.UUID
@@ -64,16 +65,38 @@ fun FrictionGate(
             FrictionType.TIMED_WAIT -> TimedWaitDialog(app, rule.param, onCancel, advance)
             FrictionType.MATH -> MathChallengeDialog(app, onCancel, advance)
             FrictionType.REFLECTION -> ReflectionLaunchDialog(app, rule.param, onCancel, advance)
+            // LIMIT-kind rules are filtered out of the sequence; skip defensively.
+            FrictionType.DAILY_MINUTES, FrictionType.DAILY_LAUNCHES -> advance()
         }
     }
 }
 
 /**
  * The full ordered list of frictions to run: the baseline token challenge (sized by
- * [tokenCount]) first, then the app's assigned [rules] stacked on top.
+ * [tokenCount]) first, then the app's assigned CHALLENGE-kind [rules] stacked on top.
+ * LIMIT-kind rules are excluded — they are preconditions enforced before the gate
+ * (see [exceededDailyLimit]), not dialog steps.
  */
 internal fun frictionSequence(rules: List<FrictionRule>, tokenCount: Int): List<FrictionRule> =
-    listOf(FrictionRule(FrictionType.TOKENS, tokenCount)) + rules
+    listOf(FrictionRule(FrictionType.TOKENS, tokenCount)) +
+        rules.filter { it.type.kind == FrictionKind.CHALLENGE }
+
+/**
+ * The LIMIT-kind rule in [rules] the app has exceeded today, or null when under every
+ * limit (or no limits are assigned). Checked before the friction gate: a violated
+ * limit blocks the app until the day rolls over.
+ */
+internal fun exceededDailyLimit(
+    rules: List<FrictionRule>,
+    launchesToday: Int,
+    minutesToday: Int,
+): FrictionRule? = rules.firstOrNull { rule ->
+    when (rule.type) {
+        FrictionType.DAILY_MINUTES -> minutesToday >= rule.param
+        FrictionType.DAILY_LAUNCHES -> launchesToday >= rule.param
+        else -> false
+    }
+}
 
 // ── Type-N-tokens dialog ────────────────────────────────────────────────────
 
