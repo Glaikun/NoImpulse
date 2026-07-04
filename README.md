@@ -140,7 +140,8 @@ app/src/main/java/com/glaikun/noimpulse/
     │   ├── SetupScreen.kt       — first-run permissions + allowlist seed
     │   └── SettingsScreen.kt    — post-onboarding settings (permissions, switch launcher, Restricted Mode, theme + text size)
     ├── drawer/
-    │   └── AppDrawerScreen.kt   — swipe-up drawer; every installed app + per-app friction options
+    │   ├── AppDrawerScreen.kt   — swipe-up drawer; every installed app + per-app friction options
+    │   └── PendingFriction.kt   — a friction change awaiting confirmation (Strengthen / Weaken)
     └── theme/                   — Material 3 colour, typography, theme
 ```
 

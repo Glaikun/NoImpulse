@@ -87,10 +87,8 @@ fun AppDrawerScreen(
     var pendingApp by remember { mutableStateOf<AppEntry?>(null) }
     var sheetApp by remember { mutableStateOf<AppEntry?>(null) }
     var addGateApp by remember { mutableStateOf<AppEntry?>(null) }
-    // The (app, rule) whose removal is awaiting the UUID gate.
-    var removeFrictionTarget by remember { mutableStateOf<Pair<AppEntry, FrictionRule>?>(null) }
-    // The (app, rule) whose addition is awaiting the "are you sure?" prompt.
-    var confirmAddTarget by remember { mutableStateOf<Pair<AppEntry, FrictionRule>?>(null) }
+    // The friction change awaiting confirmation — see PendingFriction for the two kinds.
+    var pendingFriction by remember { mutableStateOf<PendingFriction?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -194,8 +192,7 @@ fun AppDrawerScreen(
                 onSetAppAllowed(app.packageName, false)
                 sheetApp = null
             },
-            onRequestAddFriction = { confirmAddTarget = app to it },
-            onRequestRemoveFriction = { removeFrictionTarget = app to it },
+            onRequestChange = { pendingFriction = it },
         )
     }
 
@@ -210,45 +207,37 @@ fun AppDrawerScreen(
         )
     }
 
-    confirmAddTarget?.let { (app, rule) ->
-        AlertDialog(
-            onDismissRequest = { confirmAddTarget = null },
-            title = { Text("Apply friction?") },
-            text = { Text("Make ${app.label} harder to open with this friction?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        // Only one timed wait per app — replace any existing timer.
-                        if (rule.type == FrictionType.TIMED_WAIT) {
-                            appFriction[app.packageName].orEmpty()
-                                .filter { it.type == FrictionType.TIMED_WAIT }
-                                .forEach { onRemoveAppFriction(app.packageName, it) }
-                        }
-                        onAddAppFriction(app.packageName, rule)
-                        confirmAddTarget = null
-                    },
-                    modifier = Modifier.testTag("confirmAddFriction"),
-                ) { Text("Apply") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmAddTarget = null }) { Text("Cancel") }
-            },
-        )
-    }
-
-    removeFrictionTarget?.let { (app, rule) ->
-        key(app.packageName, rule) {
-            UuidChallengeDialog(
-                title = "Remove friction?",
-                message = "Removing friction makes ${app.label} easier to open. " +
-                    "Type the code below exactly to confirm.",
-                confirmLabel = "Remove",
-                onDismiss = { removeFrictionTarget = null },
-                onConfirmed = {
-                    onRemoveAppFriction(app.packageName, rule)
-                    removeFrictionTarget = null
+    pendingFriction?.let { pending ->
+        val confirm = {
+            pending.remove?.let { onRemoveAppFriction(pending.app.packageName, it) }
+            pending.add?.let { onAddAppFriction(pending.app.packageName, it) }
+            pendingFriction = null
+        }
+        when (pending) {
+            is PendingFriction.Strengthen -> AlertDialog(
+                onDismissRequest = { pendingFriction = null },
+                title = { Text("Apply friction?") },
+                text = { Text("Make ${pending.app.label} harder to open with this friction?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = confirm,
+                        modifier = Modifier.testTag("confirmAddFriction"),
+                    ) { Text("Apply") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingFriction = null }) { Text("Cancel") }
                 },
             )
+            is PendingFriction.Weaken -> key(pending) {
+                UuidChallengeDialog(
+                    title = if (pending.add != null) "Shorten timed wait?" else "Remove friction?",
+                    message = "This makes ${pending.app.label} easier to open. " +
+                        "Type the code below exactly to confirm.",
+                    confirmLabel = if (pending.add != null) "Shorten" else "Remove",
+                    onDismiss = { pendingFriction = null },
+                    onConfirmed = confirm,
+                )
+            }
         }
     }
 }
@@ -289,11 +278,9 @@ private fun AppOptionsSheet(
     onDismiss: () -> Unit,
     onAddToAllowlist: () -> Unit,
     onRemoveFromAllowlist: () -> Unit,
-    onRequestAddFriction: (FrictionRule) -> Unit,
-    onRequestRemoveFriction: (FrictionRule) -> Unit,
+    onRequestChange: (PendingFriction) -> Unit,
 ) {
     // Timed wait is a single grouped choice (at most one timer per app); the rest stack freely.
-    val timerDurations = listOf(10, 30, 60)
     val currentTimer = currentFrictions.firstOrNull { it.type == FrictionType.TIMED_WAIT }
     val stackableOptions = listOf(
         "Math problem" to FrictionRule(FrictionType.MATH, 1),
@@ -342,23 +329,18 @@ private fun AppOptionsSheet(
             Text(text = "Add extra friction", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = "A token challenge already applies whenever this app isn't " +
-                    "allowlisted. Add more below to stack on top. Removing one requires a code.",
+                    "allowlisted. Add more below to stack on top. Removing one — or " +
+                    "shortening the timed wait — requires a code.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
 
-            // ── Timed wait (grouped, single choice) ──
-            Text(text = "Timed wait", style = MaterialTheme.typography.titleSmall)
-            FrictionRadioRow(label = "Off", selected = currentTimer == null) {
-                currentTimer?.let(onRequestRemoveFriction)
-            }
-            timerDurations.forEach { seconds ->
-                val rule = FrictionRule(FrictionType.TIMED_WAIT, seconds)
-                FrictionRadioRow(label = "${seconds}s", selected = currentTimer == rule) {
-                    if (currentTimer != rule) onRequestAddFriction(rule)
-                }
-            }
+            TimedWaitSection(
+                app = app,
+                currentTimer = currentTimer,
+                onRequestChange = onRequestChange,
+            )
 
             Spacer(Modifier.height(8.dp))
 
@@ -368,19 +350,54 @@ private fun AppOptionsSheet(
                 FrictionToggle(
                     label = label,
                     assigned = assigned,
-                    onToggle = { if (assigned) onRequestRemoveFriction(rule) else onRequestAddFriction(rule) },
+                    onToggle = {
+                        onRequestChange(
+                            if (assigned) PendingFriction.Weaken(app, remove = rule)
+                            else PendingFriction.Strengthen(app, remove = null, add = rule),
+                        )
+                    },
                 )
             }
         }
     }
 }
 
+/**
+ * The "Timed wait" radio group. At most one timer per app, and the section decides
+ * what each pick means: turning it Off or picking a shorter duration weakens
+ * friction (UUID gate); the first timer or a longer one strengthens it.
+ */
 @Composable
-private fun FrictionRadioRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+private fun TimedWaitSection(
+    app: AppEntry,
+    currentTimer: FrictionRule?,
+    onRequestChange: (PendingFriction) -> Unit,
+) {
+    val timerDurations = listOf(10, 30, 60)
+    Text(text = "Timed wait", style = MaterialTheme.typography.titleSmall)
+    FrictionRadioRow(label = "Off", selected = currentTimer == null, testTag = "timedWaitOff") {
+        currentTimer?.let { onRequestChange(PendingFriction.Weaken(app, remove = it)) }
+    }
+    timerDurations.forEach { seconds ->
+        val rule = FrictionRule(FrictionType.TIMED_WAIT, seconds)
+        FrictionRadioRow(label = "${seconds}s", selected = currentTimer == rule, testTag = "timedWait_$seconds") {
+            when {
+                currentTimer == rule -> {} // already selected — nothing to change
+                currentTimer != null && seconds < currentTimer.param ->
+                    onRequestChange(PendingFriction.Weaken(app, remove = currentTimer, add = rule))
+                else -> onRequestChange(PendingFriction.Strengthen(app, remove = currentTimer, add = rule))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrictionRadioRow(label: String, selected: Boolean, testTag: String, onSelect: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(testTag)
             .clickable(onClick = onSelect)
             .padding(vertical = 4.dp),
     ) {

@@ -10,6 +10,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -79,6 +81,49 @@ class AppDrawerScreenTest {
         rule.onNodeWithTag("drawerApp_${app.packageName}").performClick()
         assertEquals(app.packageName, launchedPkg)
         assertFalse(restrictedTapped)
+    }
+
+    @Test
+    fun shorteningTheTimedWaitRequiresTheUuidGate() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 0,
+                appFriction = mapOf(
+                    app.packageName to listOf(FrictionRule(FrictionType.TIMED_WAIT, 60)),
+                ),
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performTouchInput { longClick() }
+        rule.onNodeWithTag("timedWait_10").performClick()
+
+        // Weakening friction gets the UUID gate, not the light "apply?" prompt.
+        rule.onNodeWithTag("uuidInput").assertIsDisplayed()
+        rule.onAllNodesWithTag("confirmAddFriction").assertCountEquals(0)
+    }
+
+    @Test
+    fun lengtheningTheTimedWaitOnlyNeedsTheLightConfirm() {
+        val app = AppEntry("Twitter", "com.twitter")
+        rule.setContent {
+            AppDrawerScreen(
+                installedApps = listOf(app),
+                allowedPackages = emptySet(),
+                drawerLaunchesToday = 0,
+                appFriction = mapOf(
+                    app.packageName to listOf(FrictionRule(FrictionType.TIMED_WAIT, 10)),
+                ),
+            )
+        }
+
+        rule.onNodeWithTag("drawerApp_${app.packageName}").performTouchInput { longClick() }
+        rule.onNodeWithTag("timedWait_60").performClick()
+
+        rule.onNodeWithTag("confirmAddFriction").assertIsDisplayed()
+        rule.onAllNodesWithTag("uuidInput").assertCountEquals(0)
     }
 
     @Test
