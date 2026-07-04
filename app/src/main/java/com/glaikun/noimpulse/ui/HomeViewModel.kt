@@ -461,12 +461,14 @@ internal fun tokensRequired(drawerLaunchesToday: Int): Int =
 internal fun minuteOfDay(): Int = LocalTime.now().let { it.hour * 60 + it.minute }
 
 /**
- * Whether the user is currently in "restricted time": Restricted Mode is [enabled] and
- * [minuteOfDay] falls outside every allowed window. An enabled schedule with no windows is
- * always restricted — turning the mode on with nothing allowed locks everything by design.
+ * Whether the user is currently in "restricted time": Restricted Mode is [enabled], a
+ * schedule exists, and [minuteOfDay] falls outside every allowed window. An enabled mode
+ * with no windows enforces nothing — removing your last allowed time lifts the
+ * restriction rather than locking everything down.
  */
 internal fun isRestrictedNow(
     enabled: Boolean,
     allowedWindows: List<TimeWindow>,
     minuteOfDay: Int,
-): Boolean = enabled && allowedWindows.none { it.contains(minuteOfDay) }
+): Boolean = enabled && allowedWindows.isNotEmpty() &&
+    allowedWindows.none { it.contains(minuteOfDay) }

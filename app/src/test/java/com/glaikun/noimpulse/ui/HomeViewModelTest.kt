@@ -287,7 +287,7 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `enabling restricted mode with no windows makes it restricted now`() = runTest {
+    fun `enabling restricted mode with no windows is not restricted — no schedule yet`() = runTest {
         val settings = FakeSettingsRepository()
         val vm = activeViewModel(null, settings = settings)
 
@@ -295,7 +295,7 @@ class HomeViewModelTest {
         runCurrent()
 
         assertTrue(vm.state.value.restrictedModeEnabled)
-        assertTrue(vm.state.value.isRestrictedNow)
+        assertFalse(vm.state.value.isRestrictedNow)
     }
 
     @Test
@@ -309,6 +309,45 @@ class HomeViewModelTest {
 
         assertEquals(listOf(TimeWindow(0, 0)), vm.state.value.allowedWindows)
         assertFalse(vm.state.value.isRestrictedNow)
+    }
+
+    @Test
+    fun `removing the last allowed window lifts the restriction so apps can open`() = runTest {
+        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        // A window that never covers the current time (starts two hours from now),
+        // so enabling the mode restricts apps regardless of when the test runs.
+        val now = minuteOfDay()
+        val notNow = TimeWindow((now + 120) % 1440, (now + 180) % 1440)
+
+        vm.setRestrictedModeEnabled(true)
+        vm.addAllowedWindow(notNow)
+        runCurrent()
+        assertTrue(vm.state.value.isRestrictedNow)
+
+        vm.removeAllowedWindow(notNow)
+        runCurrent()
+
+        assertTrue(vm.state.value.allowedWindows.isEmpty())
+        assertFalse(vm.state.value.isRestrictedNow)   // nothing to enforce — apps open
+    }
+
+    @Test
+    fun `removing the active window with another remaining restricts immediately`() = runTest {
+        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        val now = minuteOfDay()
+        val notNow = TimeWindow((now + 120) % 1440, (now + 180) % 1440)
+
+        vm.setRestrictedModeEnabled(true)
+        vm.addAllowedWindow(TimeWindow(0, 0))   // whole day — always active
+        vm.addAllowedWindow(notNow)
+        runCurrent()
+        assertFalse(vm.state.value.isRestrictedNow)
+
+        vm.removeAllowedWindow(TimeWindow(0, 0))
+        runCurrent()
+
+        // Only the not-now window remains, so restriction kicks in straight away.
+        assertTrue(vm.state.value.isRestrictedNow)
     }
 
     // ── Appearance ────────────────────────────────────────────────────────────
