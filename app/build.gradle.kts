@@ -19,7 +19,9 @@ android {
         versionCode = 4
         versionName = "0.3.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Swaps in HiltTestApplication so app/src/androidTest can launch @AndroidEntryPoint
+        // activities under Hilt (see HiltTestRunner.kt).
+        testInstrumentationRunner = "com.glaikun.noimpulse.HiltTestRunner"
     }
 
     buildTypes {
@@ -40,6 +42,14 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    testOptions {
+        unitTests {
+            // Robolectric needs app resources/themes on the classpath to render real
+            // Compose UI (ui/NoImpulseContent.kt) in the integration suite under app/src/test.
+            isIncludeAndroidResources = true
+        }
     }
 }
 
@@ -71,10 +81,14 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.androidx.core)
     testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

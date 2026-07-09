@@ -130,6 +130,7 @@ app/src/main/java/com/glaikun/noimpulse/
 └── ui/
     ├── AppScreen.kt             — sealed AppScreen + AppEvent + pure nextScreen() transition
     ├── HomeViewModel.kt         — single ViewModel; exposes navigation + UI state as StateFlow
+    ├── NoImpulseContent.kt      — composition root (theme + AppScreen FSM render); MainActivity just wires Activity-only callbacks into it
     ├── AppIcon.kt               — renders a greyscale app icon from a PackageManager Drawable
     ├── FrictionGate.kt          — renders the friction sequence for an app (shared by drawer + re-friction)
     ├── FrictionDialogs.kt       — friction-dialog Composables (timed wait, math, reflection, UUID gate, restricted-time notice)
@@ -143,6 +144,22 @@ app/src/main/java/com/glaikun/noimpulse/
     │   ├── AppDrawerScreen.kt   — swipe-up drawer; every installed app + per-app friction options
     │   └── PendingFriction.kt   — a friction change awaiting confirmation (Strengthen / Weaken)
     └── theme/                   — Material 3 colour, typography, theme
+```
+
+Annotated tree of the JVM test source (`app/src/test`) — Robolectric + hand-written fakes:
+
+```
+app/src/test/java/com/glaikun/noimpulse/
+├── testing/                     — shared test doubles, used by both HomeViewModelTest and the integration suite
+│   ├── Fakes.kt                 — Fake*Source/Repository test doubles + homeViewModel()/realHomeViewModel() builders
+│   └── ComposeSemantics.kt      — Compose-test helpers (textMatching, settle, …) for the integration suite
+└── integration/                 — full-app scenarios rendered through the real NoImpulseContent + HomeViewModel
+    ├── OnboardingFlowIntegrationTest.kt     — fresh install: Intro → Setup → Home
+    ├── AllowlistIntegrationTest.kt          — allowlisting an app removes its friction gate
+    ├── FrictionGateIntegrationTest.kt       — baseline token challenge, and a stacked MATH rule
+    ├── DailyLimitIntegrationTest.kt         — an app already over its daily limit is blocked outright
+    ├── RestrictedModeIntegrationTest.kt     — Restricted Mode blocks non-allowlisted apps, not allowlisted ones
+    └── RefrictionIntegrationTest.kt         — FrictionWatchService's re-friction entry point (all three outcomes) + the session lifecycle across a screen-off/on cycle
 ```
 
 ## Ideas

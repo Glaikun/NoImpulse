@@ -15,7 +15,16 @@ A change is **not complete** until it builds and its tests pass. Before marking 
 - `./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin` — main **and** instrumentation sources compile.
 - `./gradlew :app:assembleDebug` — the debug APK assembles.
 
-New behaviour ships **with** tests: pure logic gets a JVM unit test (`app/src/test/…`), repositories are exercised through their interface with hand-written fakes, and Compose screens get an instrumentation test (`app/src/androidTest/…`) where it adds value. Never mark work complete on a red or skipped suite — fix the root cause, or state plainly what is failing and why.
+Never mark work complete on a red or skipped suite — fix the root cause, or state plainly what is failing and why.
+
+### Test tiers
+
+New behaviour ships **with** a test, at the cheapest tier that can actually see the behavior — this is a testing pyramid, so tier 1 should have far more tests than tier 2, tier 2 more than tier 3, and tier 4 stays to a handful of smoke-level scenarios:
+
+1. **Unit tests** — `app/src/test/…` (flat, e.g. `HomeViewModelTest.kt`). Robolectric + hand-written fakes (`testing/Fakes.kt`), no UI rendering. Pure logic and single components (a ViewModel, a repository) tested directly. This is where most new logic should land.
+2. **Screen instrumentation tests** — `app/src/androidTest/…` under `ui/`/`drawer/`/`services/` (e.g. `AppDrawerScreenTest.kt`). Real device/emulator, real Compose rendering, but each screen tested in isolation with hand-fed state and lambdas — not the real `HomeViewModel`, not real screen-to-screen navigation.
+3. **Integration tests** — `app/src/test/java/com/glaikun/noimpulse/integration/`. Full-scenario tests that render the real `NoImpulseContent` composition root against a real `HomeViewModel` (`testing/Fakes.kt`'s `realHomeViewModel()`), driven under Robolectric via `androidx.compose.ui.test`. Real UI + real cross-screen navigation together, but every system-facing source (`LauncherAppsSource`, `UsageStatsSource`, …) is still a hand-written fake — no installed APK, no device, no real `PackageManager`/`AccessibilityService`. Runs as part of `testDebugUnitTest`, unlike the two device-based tiers. Robolectric-hosted Compose has sharp edges undocumented anywhere upstream — a missing `@Config(qualifiers = ...)` silently zeroes `LazyColumn` viewports, and any dialog/bottom-sheet or focused text field makes `waitForIdle()` spin until Espresso's `AppNotIdleException`. Use `testing/ComposeSemantics.kt`'s `settle()` (its doc explains why) instead of `waitForIdle()` in any integration test that opens a dialog.
+4. **Real e2e** — flat under `app/src/androidTest/java/com/glaikun/noimpulse/` (e.g. `OnboardingAndFrictionGateE2eTest.kt`). Launches the actual `MainActivity` with its actual Hilt graph: `HiltTestRunner` swaps in `HiltTestApplication`, and `TestAppModule` `@TestInstallIn`-replaces production `AppModule` with the same style of fakes as tier 3, via its own small `testing/Fakes.kt` (`test` and `androidTest` are separate compilation units, so this is deliberate duplication, not drift). Needs a connected device or emulator (`./gradlew :app:connectedDebugAndroidTest`) and isn't part of the standard build — this tier exists to catch what only a real installed app can prove (broken Hilt wiring, an Activity that doesn't actually come up), not to re-prove tier-3 coverage just because it's now possible.
 
 ## Product constraints (non-negotiable)
 
