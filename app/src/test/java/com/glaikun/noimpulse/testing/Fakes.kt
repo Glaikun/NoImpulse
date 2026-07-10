@@ -61,6 +61,7 @@ internal class FakeLauncherAppsSource(
     private val essentials: List<String> = emptyList(),
     private val alwaysAllowed: List<String> = emptyList(),
     private val homeScreen: List<AppEntry> = emptyList(),
+    private val installedAuthenticators: List<String> = emptyList(),
 ) : LauncherAppsSource {
     override fun isDefaultHome(): Boolean = defaultHome
     override fun installedLaunchableApps(): List<AppEntry> = installed
@@ -70,6 +71,7 @@ internal class FakeLauncherAppsSource(
     override fun homeScreenApps(): List<AppEntry> = homeScreen
     override fun essentialPackages(): List<String> = essentials
     override fun alwaysAllowedPackages(): List<String> = alwaysAllowed
+    override fun installedAuthenticatorPackages(): List<String> = installedAuthenticators
 }
 
 internal class FakeSettingsRepository(
@@ -81,6 +83,7 @@ internal class FakeSettingsRepository(
     appLaunches: Map<String, Int> = emptyMap(),
     restrictedModeEnabled: Boolean = false,
     allowedTimeWindows: List<TimeWindow> = emptyList(),
+    seededAuthenticators: Set<String> = emptySet(),
 ) : SettingsRepository {
     private val _introSeen = MutableStateFlow(introSeen)
     private val _setupComplete = MutableStateFlow(setupComplete)
@@ -92,6 +95,7 @@ internal class FakeSettingsRepository(
     private val _allowedTimeWindows = MutableStateFlow(allowedTimeWindows)
     private val _themeMode = MutableStateFlow(ThemeMode.DARK)
     private val _textSize = MutableStateFlow(TextSize.DEFAULT)
+    private val _seededAuthenticators = MutableStateFlow(seededAuthenticators)
 
     override val introSeen: Flow<Boolean> = _introSeen
     override val setupComplete: Flow<Boolean> = _setupComplete
@@ -99,6 +103,7 @@ internal class FakeSettingsRepository(
     override val appFriction: Flow<Map<String, List<FrictionRule>>> = _appFriction
     override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
     override val appLaunchesToday: Flow<Map<String, Int>> = _appLaunches
+    override val seededAuthenticators: Flow<Set<String>> = _seededAuthenticators
     override val restrictedModeEnabled: Flow<Boolean> = _restrictedModeEnabled
     override val allowedTimeWindows: Flow<List<TimeWindow>> = _allowedTimeWindows
     override val themeMode: Flow<ThemeMode> = _themeMode
@@ -138,6 +143,10 @@ internal class FakeSettingsRepository(
     override suspend fun recordAppLaunch(packageName: String) {
         val current = _appLaunches.value[packageName] ?: 0
         _appLaunches.value = _appLaunches.value + (packageName to current + 1)
+    }
+
+    override suspend fun markAuthenticatorSeeded(packageName: String) {
+        _seededAuthenticators.value = _seededAuthenticators.value + packageName
     }
 
     override suspend fun setRestrictedModeEnabled(enabled: Boolean) {

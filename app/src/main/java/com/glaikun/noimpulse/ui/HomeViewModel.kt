@@ -209,8 +209,9 @@ class HomeViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     /**
-     * The always-allowed core (phone/settings/messages/camera/maps). Exposed for the UI so
-     * it can lock those rows; [lockedCache] mirrors the latest value for the mutation guards.
+     * The always-allowed core (phone/settings/messages/camera/maps/clock/contacts). Exposed
+     * for the UI so it can lock those rows; [lockedCache] mirrors the latest value for the
+     * mutation guards.
      */
     val lockedPackages: StateFlow<Set<String>> =
         statusRefresh
@@ -224,6 +225,7 @@ class HomeViewModel @Inject constructor(
     init {
         seedEssentialsIfFresh()
         ensureAlwaysAllowed()
+        seedAuthenticators()
     }
 
     /** The greyscale-rendered launcher icon for [packageName] (cached in the source). */
@@ -314,15 +316,34 @@ class HomeViewModel @Inject constructor(
      * so users who turn an essential off won't have it silently re-added.
      */
     /**
-     * Guarantees the always-allowed core (phone/settings/messages/camera/maps) is on the
-     * allowlist. Idempotent and runs every start, so even if a previous version let one be
-     * removed, it's restored. Also primes [lockedCache] for the mutation guards.
+     * Guarantees the always-allowed core (phone/settings/messages/camera/maps/clock/contacts)
+     * is on the allowlist. Idempotent and runs every start, so even if a previous version let
+     * one be removed, it's restored. Also primes [lockedCache] for the mutation guards.
      */
     private fun ensureAlwaysAllowed() {
         viewModelScope.launch(ioDispatcher) {
             val locked = launcher.alwaysAllowedPackages()
             lockedCache = locked.toSet()
             locked.forEach { settings.setAppAllowed(it, true) }
+        }
+    }
+
+    /**
+     * Adds each installed known authenticator to the allowlist — once. Friction on a 2FA
+     * app can lock the user out of *other* accounts, so they start friction-free; but
+     * unlike the locked core, the user stays in control: the seeded marker means a
+     * deliberate removal is never undone, while an authenticator installed later still
+     * gets seeded when first seen.
+     */
+    private fun seedAuthenticators() {
+        viewModelScope.launch(ioDispatcher) {
+            val seeded = settings.seededAuthenticators.first()
+            launcher.installedAuthenticatorPackages()
+                .filter { it !in seeded }
+                .forEach { pkg ->
+                    settings.setAppAllowed(pkg, true)
+                    settings.markAuthenticatorSeeded(pkg)
+                }
         }
     }
 

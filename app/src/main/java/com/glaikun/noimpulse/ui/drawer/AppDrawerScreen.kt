@@ -323,8 +323,8 @@ private fun AppOptionsSheet(
             Text(text = app.label, style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
 
-            // The always-allowed core (phone/settings/messages/camera/maps) has no controls —
-            // it can't be removed from the allowlist or have friction added.
+            // The always-allowed core (phone/settings/messages/camera/maps/clock/contacts)
+            // has no controls — it can't be removed from the allowlist or have friction added.
             if (isLocked) {
                 Text(
                     text = "Always available. This core app can't be removed from the " +

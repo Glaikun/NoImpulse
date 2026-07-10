@@ -51,6 +51,18 @@ android {
     }
 }
 
+// Unit tests run against the debug variant only. The integration suite's
+// createComposeRule() needs the compose-test host activity, which ui-test-manifest
+// merges into the *debug* app manifest via debugImplementation; the release manifest
+// must not ship a test activity, so under testReleaseUnitTest the launch fails
+// (RoboMonitoringInstrumentation: "Unable to resolve activity"). The suite has no
+// build-type-specific logic, so the release run added no coverage — only duplication.
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) {
+        it.hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
+    }
+}
+
 tasks.whenTaskAdded {
     if (name.contains("lintAnalyze") ||
         name.contains("lintVital") ||

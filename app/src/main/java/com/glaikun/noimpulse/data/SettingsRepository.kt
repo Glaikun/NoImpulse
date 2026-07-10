@@ -35,6 +35,13 @@ interface SettingsRepository {
      */
     val appLaunchesToday: Flow<Map<String, Int>>
 
+    /**
+     * Authenticator packages that have already been auto-added to the allowlist once.
+     * The memory is what keeps the seeding one-shot: a user's deliberate removal sticks,
+     * while an authenticator installed later still gets seeded on first sight.
+     */
+    val seededAuthenticators: Flow<Set<String>>
+
     /** Whether Restricted Mode is on. When on, apps are unusable outside [allowedTimeWindows]. */
     val restrictedModeEnabled: Flow<Boolean>
 
@@ -64,6 +71,9 @@ interface SettingsRepository {
 
     /** Same day-keyed reset-or-increment as [recordDrawerLaunch], but per [packageName]. */
     suspend fun recordAppLaunch(packageName: String)
+
+    /** Records that [packageName] has been auto-added to the allowlist (see [seededAuthenticators]). */
+    suspend fun markAuthenticatorSeeded(packageName: String)
 
     suspend fun setRestrictedModeEnabled(enabled: Boolean)
 

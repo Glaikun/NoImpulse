@@ -557,6 +557,40 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `an installed authenticator is auto-added to the allowlist and marked seeded`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = homeViewModel(
+            null,
+            launcher = FakeLauncherAppsSource(
+                installedAuthenticators = listOf("com.beemdevelopment.aegis"),
+            ),
+            settings = settings,
+        )
+
+        assertTrue(vm.state.value.allowedApps.any { it.packageName == "com.beemdevelopment.aegis" })
+        assertEquals(setOf("com.beemdevelopment.aegis"), settings.seededAuthenticators.first())
+    }
+
+    @Test
+    fun `a seeded authenticator the user removed is NOT re-added on the next start`() = runTest {
+        // Seeded on a previous start, then deliberately removed from the allowlist:
+        // the one-shot marker must keep that removal sticky.
+        val settings = FakeSettingsRepository(
+            setupComplete = true,
+            seededAuthenticators = setOf("com.beemdevelopment.aegis"),
+        )
+        val vm = homeViewModel(
+            null,
+            launcher = FakeLauncherAppsSource(
+                installedAuthenticators = listOf("com.beemdevelopment.aegis"),
+            ),
+            settings = settings,
+        )
+
+        assertTrue(vm.state.value.allowedApps.none { it.packageName == "com.beemdevelopment.aegis" })
+    }
+
+    @Test
     fun `recordRefrictionPass bumps the per-app count but not the drawer counter`() = runTest {
         val settings = FakeSettingsRepository(setupComplete = true)
         val vm = homeViewModel(null, settings = settings)

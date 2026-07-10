@@ -49,6 +49,9 @@ class DataStoreSettingsRepository(
                 .groupBy({ it.first }, { it.second })
         }
 
+    override val seededAuthenticators: Flow<Set<String>> =
+        dataStore.data.map { it[Keys.SEEDED_AUTHENTICATORS] ?: emptySet() }
+
     override val restrictedModeEnabled: Flow<Boolean> =
         dataStore.data.map { it[Keys.RESTRICTED_MODE_ENABLED] ?: false }
 
@@ -165,6 +168,13 @@ class DataStoreSettingsRepository(
         }
     }
 
+    override suspend fun markAuthenticatorSeeded(packageName: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.SEEDED_AUTHENTICATORS] =
+                (prefs[Keys.SEEDED_AUTHENTICATORS] ?: emptySet()) + packageName
+        }
+    }
+
     override suspend fun setRestrictedModeEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.RESTRICTED_MODE_ENABLED] = enabled }
     }
@@ -200,6 +210,7 @@ class DataStoreSettingsRepository(
         val DRAWER_COUNTER_DATE = stringPreferencesKey("drawer_counter_date")
         val APP_LAUNCHES_TODAY = stringSetPreferencesKey("app_launches_today")
         val APP_LAUNCHES_DATE = stringPreferencesKey("app_launches_date")
+        val SEEDED_AUTHENTICATORS = stringSetPreferencesKey("seeded_authenticators")
         val RESTRICTED_MODE_ENABLED = booleanPreferencesKey("restricted_mode_enabled")
         val ALLOWED_TIME_WINDOWS = stringSetPreferencesKey("allowed_time_windows")
         val THEME_MODE = stringPreferencesKey("theme_mode")

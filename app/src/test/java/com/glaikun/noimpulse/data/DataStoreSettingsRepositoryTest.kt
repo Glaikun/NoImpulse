@@ -384,6 +384,25 @@ class DataStoreSettingsRepositoryTest {
         assertEquals(mapOf("com.twitter" to 3), repo.appLaunchesToday.first())
     }
 
+    // ── Authenticator seeding memory ─────────────────────────────────────────
+
+    @Test
+    fun `seededAuthenticators defaults to empty`() = runTest {
+        assertTrue(newRepo().seededAuthenticators.first().isEmpty())
+    }
+
+    @Test
+    fun `markAuthenticatorSeeded persists and accumulates`() = runTest {
+        val repo = newRepo()
+        repo.markAuthenticatorSeeded("com.beemdevelopment.aegis")
+        repo.markAuthenticatorSeeded("com.authy.authy")
+
+        assertEquals(
+            setOf("com.beemdevelopment.aegis", "com.authy.authy"),
+            repo.seededAuthenticators.first(),
+        )
+    }
+
     // ── Midnight rollover ────────────────────────────────────────────────────
 
     @Test
