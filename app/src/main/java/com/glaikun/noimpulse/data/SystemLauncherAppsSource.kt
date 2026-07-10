@@ -85,10 +85,32 @@ class SystemLauncherAppsSource @Inject constructor(
         Telephony.Sms.getDefaultSmsPackage(context),                            // messages
         resolveDefaultPackage(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)), // camera
         resolveDefaultPackage(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0"))),     // maps
+        resolveDefaultPackage(Intent(AlarmClock.ACTION_SHOW_ALARMS)),            // clock
+        resolveDefaultPackage(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CONTACTS)), // contacts
     ).distinct()
+
+    override fun installedAuthenticatorPackages(): List<String> =
+        KNOWN_AUTHENTICATOR_PACKAGES.filter { appEntryFor(it) != null }
 
     private fun resolveDefaultPackage(intent: Intent): String? =
         pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
             ?.activityInfo
             ?.packageName
 }
+
+/**
+ * Well-known 2FA authenticator apps, by package name. Best-effort — there is no system
+ * role or intent to resolve "the authenticator", so unlisted apps simply aren't seeded.
+ * Extend freely as new ones show up.
+ */
+private val KNOWN_AUTHENTICATOR_PACKAGES = listOf(
+    "com.google.android.apps.authenticator2",   // Google Authenticator
+    "com.azure.authenticator",                  // Microsoft Authenticator
+    "com.authy.authy",                          // Twilio Authy
+    "com.beemdevelopment.aegis",                // Aegis
+    "com.twofasapp",                            // 2FAS
+    "org.fedorahosted.freeotp",                 // FreeOTP
+    "org.liberty.android.freeotpplus",          // FreeOTP+
+    "org.shadowice.flocke.andotp",              // andOTP
+    "com.duosecurity.duomobile",                // Duo Mobile
+)

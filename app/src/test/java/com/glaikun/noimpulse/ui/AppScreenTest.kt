@@ -1,6 +1,9 @@
 package com.glaikun.noimpulse.ui
 
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -104,6 +107,25 @@ class AppScreenTest {
             AppEvent.RefrictionRequested("com.twitter.android"),
         )
         assertEquals(AppScreen.Refriction("com.twitter.android"), result)
+    }
+
+    @Test
+    fun `RefrictionRequested without a verdict carries a null overLimit`() {
+        val result = nextScreen(
+            AppScreen.Home,
+            AppEvent.RefrictionRequested("com.twitter.android"),
+        )
+        assertNull((result as AppScreen.Refriction).overLimit)
+    }
+
+    @Test
+    fun `RefrictionRequested carries the exceeded daily limit into Refriction`() {
+        val limit = FrictionRule(FrictionType.DAILY_MINUTES, 30)
+        val result = nextScreen(
+            AppScreen.Home,
+            AppEvent.RefrictionRequested("com.twitter.android", overLimit = limit),
+        )
+        assertEquals(AppScreen.Refriction("com.twitter.android", overLimit = limit), result)
     }
 
     @Test

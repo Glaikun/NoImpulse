@@ -39,12 +39,12 @@ The whole interface is intentionally dull — visual calm is part of the point.
 - **Home screen.** Black background, white text, everything centred. It shows the clock, battery charge, today's pickup count and screen-on time, and a grid of your allowlisted ("fav") apps. Nothing else competes for attention.
 - **Greyscale icons.** App icons are rendered desaturated, so no app gets to pull your eye with bright branding.
 - **App drawer.** A swipe-up drawer lists *every* installed app — the escape hatch for apps you didn't allowlist. Opening one from here means passing friction first.
-- **Friction.** Launching a non-allowlisted app runs a sequence of small obstacles: a baseline "type these tokens" challenge that escalates with how much you've already drifted today, plus any extra friction you've chosen to stack on an app (a timed wait, a math problem, or reflection questions).
+- **Friction.** Launching a non-allowlisted app runs a sequence of small obstacles: a baseline "type these tokens" challenge that escalates with how much you've already drifted today, plus any extra friction you've chosen to stack on an app (a timed wait, a math problem, or reflection questions). An app can also carry a daily limit — minutes of use or opens per day — and once it's hit, the app is blocked until midnight rather than gated: hitting a minutes limit interrupts the app mid-use, and returning to a blocked app (even via Recents) re-shows the block.
 - **Re-friction.** Returning to a friction-tracked app via Recents re-shows the gate, so the drawer isn't a one-time toll.
 - **Onboarding.** A short intro explains the launcher model, the deliberate friction, and the privacy posture, followed by a setup screen for permissions and the initial allowlist.
 - **Always-allowed core.** Phone, settings, messages, camera, and maps (the device defaults) stay allowlisted at all times — they can't be removed from the allowlist, can't have friction added, and are never blocked by Restricted Mode.
 - **Settings.** Reached from the gear in the app drawer. Re-grant permissions, re-prompt to make NoImpulse the default launcher (behind the same UUID gate as allowlisting), configure Restricted Mode, and choose the colour theme and text size — all after onboarding.
-- **Restricted Mode.** An optional schedule of "allowed times" of day. While it's on and the clock is outside every allowed window, the phone is in *restricted time*: apps you haven't allowlisted won't open and returning to one bounces you back to the launcher with a "Currently in restricted time" notice. Your allowlisted apps (and the always-allowed core) keep working. Inside an allowed window everything behaves normally. Turning the mode off while a schedule exists is gated behind the UUID challenge, so loosening it takes the same deliberate effort as removing friction.
+- **Restricted Mode.** An optional schedule of "allowed times" of day. While it's on, a schedule exists, and the clock is outside every allowed window, the phone is in *restricted time*: apps you haven't allowlisted won't open and returning to one bounces you back to the launcher with a "Currently in restricted time" notice. Your allowlisted apps (and the always-allowed core) keep working. Inside an allowed window — or with no allowed times configured at all — everything behaves normally. Turning the mode off while a schedule exists, or removing an allowed time, is gated behind the UUID challenge, so loosening it takes the same deliberate effort as removing friction.
 - **Appearance & accessibility.** A light/dark/follow-system theme choice, and a text-size setting (Default / Large / Largest) that scales every text style for easier reading.
 
 ## Architecture
@@ -130,6 +130,7 @@ app/src/main/java/com/glaikun/noimpulse/
 └── ui/
     ├── AppScreen.kt             — sealed AppScreen + AppEvent + pure nextScreen() transition
     ├── HomeViewModel.kt         — single ViewModel; exposes navigation + UI state as StateFlow
+    ├── NoImpulseContent.kt      — composition root (theme + AppScreen FSM render); MainActivity just wires Activity-only callbacks into it
     ├── AppIcon.kt               — renders a greyscale app icon from a PackageManager Drawable
     ├── FrictionGate.kt          — renders the friction sequence for an app (shared by drawer + re-friction)
     ├── FrictionDialogs.kt       — friction-dialog Composables (timed wait, math, reflection, UUID gate, restricted-time notice)
@@ -140,8 +141,25 @@ app/src/main/java/com/glaikun/noimpulse/
     │   ├── SetupScreen.kt       — first-run permissions + allowlist seed
     │   └── SettingsScreen.kt    — post-onboarding settings (permissions, switch launcher, Restricted Mode, theme + text size)
     ├── drawer/
-    │   └── AppDrawerScreen.kt   — swipe-up drawer; every installed app + per-app friction options
+    │   ├── AppDrawerScreen.kt   — swipe-up drawer; every installed app + per-app friction options
+    │   └── PendingFriction.kt   — a friction change awaiting confirmation (Strengthen / Weaken)
     └── theme/                   — Material 3 colour, typography, theme
+```
+
+Annotated tree of the JVM test source (`app/src/test`) — Robolectric + hand-written fakes:
+
+```
+app/src/test/java/com/glaikun/noimpulse/
+├── testing/                     — shared test doubles, used by both HomeViewModelTest and the integration suite
+│   ├── Fakes.kt                 — Fake*Source/Repository test doubles + homeViewModel()/realHomeViewModel() builders
+│   └── ComposeSemantics.kt      — Compose-test helpers (textMatching, settle, …) for the integration suite
+└── integration/                 — full-app scenarios rendered through the real NoImpulseContent + HomeViewModel
+    ├── OnboardingFlowIntegrationTest.kt     — fresh install: Intro → Setup → Home
+    ├── AllowlistIntegrationTest.kt          — allowlisting an app removes its friction gate
+    ├── FrictionGateIntegrationTest.kt       — baseline token challenge, and a stacked MATH rule
+    ├── DailyLimitIntegrationTest.kt         — an app already over its daily limit is blocked outright
+    ├── RestrictedModeIntegrationTest.kt     — Restricted Mode blocks non-allowlisted apps, not allowlisted ones
+    └── RefrictionIntegrationTest.kt         — FrictionWatchService's re-friction entry point (all three outcomes) + the session lifecycle across a screen-off/on cycle
 ```
 
 ## Ideas
@@ -165,12 +183,12 @@ actor allowed past the branch rulesets (it authenticates as the `release-bot` de
 
 Cutting a release:
 
-1. Make sure `develop` holds the `versionName` you want to ship (in [app/build.gradle.kts](app/build.gradle.kts)).
-2. Dispatch **Release** and choose how `develop` should be bumped *afterwards* (`major`/`minor`/`patch`).
+1. Confirm the current `versionName` on `develop` (in [app/build.gradle.kts](app/build.gradle.kts)) — the workflow bumps *from* it.
+2. Dispatch **Release** and choose how to bump for this release (`major`/`minor`/`patch`).
 
-The workflow then runs the unit tests, fast-forward-merges `develop` into `master`, tags and
-publishes that version (with the APK attached to a GitHub Release), and finally bumps `develop` to
-the next development version. So `master` lands on the released version while `develop` moves ahead.
+The workflow runs the unit tests, bumps `develop`'s `versionName` and `versionCode` and commits
+`Release X.Y.Z`, fast-forward-merges that commit into `master`, then tags and publishes the release
+(with the APK attached to a GitHub Release). `master` and `develop` end at the same commit.
 
 Prerequisites (one-time): the `RELEASE_SSH_KEY` secret (private half of the write-enabled
 `release-bot` deploy key). For an installable, signed APK, also set the `KEYSTORE_BASE64`,

@@ -13,7 +13,12 @@ import com.glaikun.noimpulse.MainActivity
 import com.glaikun.noimpulse.data.FrictionSessionLedger
 import com.glaikun.noimpulse.data.LauncherAppsSource
 import com.glaikun.noimpulse.data.SettingsRepository
+import com.glaikun.noimpulse.data.UsageStatsSource
+import com.glaikun.noimpulse.model.FrictionKind
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import com.glaikun.noimpulse.model.TimeWindow
+import com.glaikun.noimpulse.ui.exceededDailyLimit
 import com.glaikun.noimpulse.ui.isRestrictedNow
 import com.glaikun.noimpulse.ui.minuteOfDay
 import dagger.hilt.android.AndroidEntryPoint
@@ -22,8 +27,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Watches foreground app changes and re-launches `MainActivity` with an extra
@@ -41,6 +48,15 @@ import javax.inject.Inject
  *  - what's left triggers a relaunch of [MainActivity] with
  *    [MainActivity.EXTRA_REFRICTION_PACKAGE].
  *
+ * Daily limits (LIMIT-kind [FrictionRule]s):
+ *  - Packages carrying a limit rule bypass the session short-circuit; their fate is
+ *    decided asynchronously in [evaluateLimits] because the minutes query is too heavy
+ *    for the event thread. An exceeded limit relaunches [MainActivity] with the verdict
+ *    attached, so the block notice shows instead of a passable gate.
+ *  - While a minutes-limited app stays in the foreground, a watchdog coroutine re-checks
+ *    at the projected limit-hit time — hitting the limit interrupts the app mid-use
+ *    rather than waiting for the next launch attempt.
+ *
  * Session lifetime:
  *  - The [FrictionSessionLedger] records "this app passed friction" entries.
  *  - A [BroadcastReceiver] for [Intent.ACTION_SCREEN_OFF] clears the ledger so
@@ -57,6 +73,7 @@ class FrictionWatchService : AccessibilityService() {
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var launcher: LauncherAppsSource
     @Inject lateinit var ledger: FrictionSessionLedger
+    @Inject lateinit var usageStats: UsageStatsSource
 
     private val serviceJob = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Default + serviceJob)
@@ -70,6 +87,19 @@ class FrictionWatchService : AccessibilityService() {
     /** Restricted Mode state, mirrored reactively so off-hours blocking is up to date. */
     @Volatile private var restrictedModeEnabled: Boolean = false
     @Volatile private var allowedWindows: List<TimeWindow> = emptyList()
+
+    /** Per-app friction rules and today's drawer-launch counts, for the daily limits. */
+    @Volatile private var appFriction: Map<String, List<FrictionRule>> = emptyMap()
+    @Volatile private var appLaunchesToday: Map<String, Int> = emptyMap()
+
+    /** The launchable app currently holding the foreground (IMEs/overlays don't count —
+     *  a keyboard popping up mustn't look like the user left the app). */
+    @Volatile private var lastForegroundPackage: String? = null
+
+    /** The one scheduled minutes-limit re-check; at most one limited app is watched at
+     *  a time — whichever launchable app was foregrounded last. */
+    private var watchdog: Job? = null
+    @Volatile private var watchdogPackage: String? = null
 
     private var allowedCollector: Job? = null
     private var restrictedCollector: Job? = null
@@ -124,6 +154,14 @@ class FrictionWatchService : AccessibilityService() {
             settings.allowedTimeWindows.collect { allowedWindows = it }
         }
 
+        // Daily-limit inputs are reactive — adding/loosening a limit takes effect at once.
+        scope.launch {
+            settings.appFriction.collect { appFriction = it }
+        }
+        scope.launch {
+            settings.appLaunchesToday.collect { appLaunchesToday = it }
+        }
+
         val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(screenOffReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -137,19 +175,85 @@ class FrictionWatchService : AccessibilityService() {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val pkg = event.packageName?.toString() ?: return
-        if (!shouldTriggerRefriction(
-                packageName = pkg,
-                ownPackageName = this.packageName,
-                allowedPackages = allowedPackages,
-                launchablePackages = launchablePackages,
-                isInSession = ledger::isInSession,
-                restrictedNow = isRestrictedNow(restrictedModeEnabled, allowedWindows, minuteOfDay()),
-            )
-        ) return
+        if (pkg == packageName || pkg in launchablePackages) {
+            lastForegroundPackage = pkg
+            // The watched app lost the foreground — stop the pending minutes re-check.
+            // (It re-arms via evaluateLimits when the app comes back.)
+            if (pkg != watchdogPackage) {
+                watchdog?.cancel()
+                watchdogPackage = null
+            }
+        }
 
-        Log.d(TAG, "Re-friction trigger for $pkg")
+        val decision = refrictionDecision(
+            packageName = pkg,
+            ownPackageName = this.packageName,
+            allowedPackages = allowedPackages,
+            launchablePackages = launchablePackages,
+            hasLimitRules = { p -> appFriction[p].orEmpty().any { it.type.kind == FrictionKind.LIMIT } },
+            isInSession = ledger::isInSession,
+            restrictedNow = isRestrictedNow(restrictedModeEnabled, allowedWindows, minuteOfDay()),
+        )
+        when (decision) {
+            RefrictionDecision.SKIP -> Unit
+            RefrictionDecision.TRIGGER -> startRefriction(pkg, overLimit = null)
+            RefrictionDecision.EVALUATE_LIMITS -> evaluateLimits(pkg)
+        }
+    }
+
+    /**
+     * Decides a limit-carrying package's fate off the event thread (the minutes query
+     * walks the whole day's usage events). Over a limit → relaunch with the verdict;
+     * under it but out of session → the normal gate; in session and under a minutes
+     * limit → arm the [watchdog] to re-check when the limit is projected to trip.
+     */
+    private fun evaluateLimits(pkg: String) {
+        scope.launch {
+            val rules = appFriction[pkg].orEmpty()
+            // Without Usage Access minutes can't be measured; only the launches limit
+            // can be enforced then, so skip the heavy query.
+            val minutesToday = if (usageStats.hasUsageAccess()) {
+                usageStats.foregroundMinutesToday()[pkg] ?: 0
+            } else {
+                0
+            }
+            val over = exceededDailyLimit(rules, appLaunchesToday[pkg] ?: 0, minutesToday)
+            when {
+                over != null -> startRefriction(pkg, over)
+                !ledger.isInSession(pkg) -> startRefriction(pkg, overLimit = null)
+                else -> minutesUntilLimit(rules, minutesToday)?.let { scheduleWatchdog(pkg, it) }
+            }
+        }
+    }
+
+    /**
+     * Re-checks [pkg]'s minutes limit once [remainingMinutes] have elapsed. Foreground
+     * time only accrues while the app is actually up, so if the user dipped out in the
+     * meantime the re-check comes back under the limit and simply re-arms. If the app
+     * lost the foreground entirely we bail — a stale check must never bounce the user
+     * out of whatever they switched to.
+     */
+    private fun scheduleWatchdog(pkg: String, remainingMinutes: Int) {
+        watchdog?.cancel()
+        watchdogPackage = pkg
+        watchdog = scope.launch {
+            // Floor of one minute: usage events lag a little, so an at-the-boundary
+            // reading could otherwise spin in a tight re-check loop.
+            delay(remainingMinutes.coerceAtLeast(1).minutes)
+            if (lastForegroundPackage == pkg) evaluateLimits(pkg)
+        }
+    }
+
+    /** Relaunches [MainActivity] to re-gate [pkg]; [overLimit] carries an exceeded
+     *  daily limit so the UI can show the block notice instead of a passable gate. */
+    private fun startRefriction(pkg: String, overLimit: FrictionRule?) {
+        Log.d(TAG, "Re-friction trigger for $pkg" + if (overLimit != null) " (over ${overLimit.type})" else "")
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra(MainActivity.EXTRA_REFRICTION_PACKAGE, pkg)
+            if (overLimit != null) {
+                putExtra(MainActivity.EXTRA_REFRICTION_LIMIT_TYPE, overLimit.type.name)
+                putExtra(MainActivity.EXTRA_REFRICTION_LIMIT_PARAM, overLimit.param)
+            }
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         }
@@ -174,31 +278,49 @@ class FrictionWatchService : AccessibilityService() {
     }
 }
 
+/** What [FrictionWatchService.onAccessibilityEvent] should do with a window-state change. */
+internal enum class RefrictionDecision { SKIP, TRIGGER, EVALUATE_LIMITS }
+
 /**
  * Pure filter chain extracted from [FrictionWatchService.onAccessibilityEvent] so it
- * can be unit-tested without the accessibility framework. Returns true when a window-
- * state-change for [packageName] should trigger re-friction.
+ * can be unit-tested without the accessibility framework.
  *
- * Skip rules (in order):
- *  1. our own package — the gate itself, the launcher home, etc.
- *  2. non-launchable packages — system overlays, IMEs, lock screen.
- *  3. allowlisted apps — no friction by design, and never blocked by Restricted Mode.
+ * Rules (in order):
+ *  1. our own package — the gate itself, the launcher home, etc. → [RefrictionDecision.SKIP]
+ *  2. non-launchable packages — system overlays, IMEs, lock screen → SKIP
+ *  3. allowlisted apps — no friction by design, and never blocked by Restricted Mode → SKIP
  *  4. [restrictedNow] — in restricted time every *non-allowlisted* launchable app is bounced,
- *     ignoring the session (the point is to make non-allowed apps unusable off-hours).
- *  5. packages already in the current screen-on session.
+ *     ignoring the session (the point is to make non-allowed apps unusable off-hours)
+ *     → [RefrictionDecision.TRIGGER]
+ *  5. [hasLimitRules] — daily limits also ignore the session (an in-session pass mustn't
+ *     outlive the limit), but the verdict needs a usage query too heavy for the event
+ *     thread → [RefrictionDecision.EVALUATE_LIMITS]
+ *  6. packages already in the current screen-on session → SKIP
+ *  7. everything else → TRIGGER
  */
-internal fun shouldTriggerRefriction(
+internal fun refrictionDecision(
     packageName: String,
     ownPackageName: String,
     allowedPackages: Set<String>,
     launchablePackages: Set<String>,
+    hasLimitRules: (String) -> Boolean,
     isInSession: (String) -> Boolean,
     restrictedNow: Boolean,
-): Boolean = when {
-    packageName == ownPackageName -> false
-    packageName !in launchablePackages -> false
-    packageName in allowedPackages -> false
-    restrictedNow -> true
-    isInSession(packageName) -> false
-    else -> true
+): RefrictionDecision = when {
+    packageName == ownPackageName -> RefrictionDecision.SKIP
+    packageName !in launchablePackages -> RefrictionDecision.SKIP
+    packageName in allowedPackages -> RefrictionDecision.SKIP
+    restrictedNow -> RefrictionDecision.TRIGGER
+    hasLimitRules(packageName) -> RefrictionDecision.EVALUATE_LIMITS
+    isInSession(packageName) -> RefrictionDecision.SKIP
+    else -> RefrictionDecision.TRIGGER
 }
+
+/**
+ * Minutes of foreground use left before the app's DAILY_MINUTES limit trips, or null
+ * when no such rule is assigned. Zero or negative means the limit is already hit —
+ * the caller decides the scheduling floor.
+ */
+internal fun minutesUntilLimit(rules: List<FrictionRule>, minutesToday: Int): Int? =
+    rules.firstOrNull { it.type == FrictionType.DAILY_MINUTES }
+        ?.let { it.param - minutesToday }

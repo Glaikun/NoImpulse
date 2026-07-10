@@ -1,5 +1,7 @@
 package com.glaikun.noimpulse.ui
 
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,6 +36,12 @@ class FrictionTest {
         assertFalse(reflectionsAllCorrect(questions, mapOf(0 to true, 1 to false)))      // incomplete
         assertFalse(reflectionsAllCorrect(questions, mapOf(0 to true, 1 to true, 2 to true))) // one wrong
         assertTrue(reflectionsAllCorrect(questions, mapOf(0 to true, 1 to false, 2 to true)))
+    }
+
+    @Test
+    fun `dailyLimitLabel spells out minutes and launches limits`() {
+        assertEquals("30 min a day", dailyLimitLabel(FrictionRule(FrictionType.DAILY_MINUTES, 30)))
+        assertEquals("3 opens a day", dailyLimitLabel(FrictionRule(FrictionType.DAILY_LAUNCHES, 3)))
     }
 
     @Test

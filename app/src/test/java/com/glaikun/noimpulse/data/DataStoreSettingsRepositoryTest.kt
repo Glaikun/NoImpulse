@@ -14,7 +14,10 @@ import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -24,7 +27,11 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DataStoreSettingsRepositoryTest {
@@ -39,16 +46,22 @@ class DataStoreSettingsRepositoryTest {
     // intended coupling.
     private val drawerCountKey = intPreferencesKey("drawer_launches_today")
     private val drawerDateKey = stringPreferencesKey("drawer_counter_date")
+    private val appLaunchesKey = stringSetPreferencesKey("app_launches_today")
+    private val appLaunchesDateKey = stringPreferencesKey("app_launches_date")
 
     /** Builds a repository over a fresh, test-scoped DataStore file. */
-    private fun TestScope.newRepo(): SettingsRepository = newRepoWithStore().first
+    private fun TestScope.newRepo(
+        clock: Clock = Clock.systemDefaultZone(),
+    ): SettingsRepository = newRepoWithStore(clock).first
 
     /** Same as [newRepo] but also returns the underlying DataStore for preseeding. */
-    private fun TestScope.newRepoWithStore(): Pair<SettingsRepository, DataStore<Preferences>> {
+    private fun TestScope.newRepoWithStore(
+        clock: Clock = Clock.systemDefaultZone(),
+    ): Pair<SettingsRepository, DataStore<Preferences>> {
         val dataStore = PreferenceDataStoreFactory.create(scope = backgroundScope) {
             File(tmp.root, "settings_${fileCounter++}.preferences_pb")
         }
-        return DataStoreSettingsRepository(dataStore) to dataStore
+        return DataStoreSettingsRepository(dataStore, clock) to dataStore
     }
 
     @Test
@@ -318,4 +331,126 @@ class DataStoreSettingsRepositoryTest {
         assertEquals(LocalDate.now().toString(), prefs[drawerDateKey])
         assertEquals(1, prefs[drawerCountKey])
     }
+
+    // ── Per-app launch counter (daily-launches limit) ────────────────────────
+
+    @Test
+    fun `appLaunchesToday defaults to empty`() = runTest {
+        assertTrue(newRepo().appLaunchesToday.first().isEmpty())
+    }
+
+    @Test
+    fun `recordAppLaunch counts per package within the same day`() = runTest {
+        val repo = newRepo()
+        repo.recordAppLaunch("com.twitter")
+        repo.recordAppLaunch("com.twitter")
+        repo.recordAppLaunch("com.maps")
+
+        assertEquals(mapOf("com.twitter" to 2, "com.maps" to 1), repo.appLaunchesToday.first())
+    }
+
+    @Test
+    fun `appLaunchesToday emits empty when stored date is yesterday`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[appLaunchesKey] = setOf("com.twitter|5")
+            prefs[appLaunchesDateKey] = LocalDate.now().minusDays(1).toString()
+        }
+
+        assertTrue(repo.appLaunchesToday.first().isEmpty())
+    }
+
+    @Test
+    fun `recordAppLaunch resets counts when stored date is yesterday`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[appLaunchesKey] = setOf("com.twitter|5")
+            prefs[appLaunchesDateKey] = LocalDate.now().minusDays(1).toString()
+        }
+
+        repo.recordAppLaunch("com.twitter")
+
+        assertEquals(mapOf("com.twitter" to 1), repo.appLaunchesToday.first())   // reset, not 6
+    }
+
+    @Test
+    fun `appLaunchesToday skips malformed entries`() = runTest {
+        val (repo, store) = newRepoWithStore()
+        store.edit { prefs ->
+            prefs[appLaunchesKey] = setOf("com.twitter|3", "com.bad|x", "garbage")
+            prefs[appLaunchesDateKey] = LocalDate.now().toString()
+        }
+
+        assertEquals(mapOf("com.twitter" to 3), repo.appLaunchesToday.first())
+    }
+
+    // ── Authenticator seeding memory ─────────────────────────────────────────
+
+    @Test
+    fun `seededAuthenticators defaults to empty`() = runTest {
+        assertTrue(newRepo().seededAuthenticators.first().isEmpty())
+    }
+
+    @Test
+    fun `markAuthenticatorSeeded persists and accumulates`() = runTest {
+        val repo = newRepo()
+        repo.markAuthenticatorSeeded("com.beemdevelopment.aegis")
+        repo.markAuthenticatorSeeded("com.authy.authy")
+
+        assertEquals(
+            setOf("com.beemdevelopment.aegis", "com.authy.authy"),
+            repo.seededAuthenticators.first(),
+        )
+    }
+
+    // ── Midnight rollover ────────────────────────────────────────────────────
+
+    @Test
+    fun `day-keyed counters reset at midnight without any write`() = runTest {
+        // One minute to midnight — the ticker's first delay is exactly 60s.
+        val clock = MutableClock(Instant.parse("2026-07-09T23:59:00Z"), ZoneId.of("UTC"))
+        val repo = newRepo(clock)
+        repo.recordDrawerLaunch()
+        repo.recordAppLaunch("com.twitter")
+
+        val drawerValues = mutableListOf<Int>()
+        val appValues = mutableListOf<Map<String, Int>>()
+        backgroundScope.launch { repo.drawerLaunchesToday.collect { drawerValues += it } }
+        backgroundScope.launch { repo.appLaunchesToday.collect { appValues += it } }
+        runCurrent()
+        assertEquals(1, drawerValues.last())
+        assertEquals(mapOf("com.twitter" to 1), appValues.last())
+
+        // Midnight passes with no DataStore write: the tick alone must refresh both
+        // flows, or a limit-blocked app would stay blocked past its promised reset.
+        clock.advanceBy(Duration.ofMinutes(2))
+        advanceTimeBy(60_001)
+        runCurrent()
+
+        assertEquals(0, drawerValues.last())
+        assertTrue(appValues.last().isEmpty())
+    }
+
+    @Test
+    fun `millisUntilNextMidnight measures to the next local midnight`() {
+        val clock = Clock.fixed(Instant.parse("2026-07-09T23:59:00Z"), ZoneId.of("UTC"))
+        assertEquals(60_000L, millisUntilNextMidnight(clock))
+    }
+
+    @Test
+    fun `millisUntilNextMidnight at exactly midnight is a full day`() {
+        val clock = Clock.fixed(Instant.parse("2026-07-09T00:00:00Z"), ZoneId.of("UTC"))
+        assertEquals(24L * 60 * 60 * 1000, millisUntilNextMidnight(clock))
+    }
+}
+
+/** A [Clock] the test can move forward, for exercising the midnight rollover. */
+private class MutableClock(private var instant: Instant, private val zone: ZoneId) : Clock() {
+    fun advanceBy(duration: Duration) {
+        instant += duration
+    }
+
+    override fun getZone(): ZoneId = zone
+    override fun withZone(zone: ZoneId): Clock = MutableClock(instant, zone)
+    override fun instant(): Instant = instant
 }

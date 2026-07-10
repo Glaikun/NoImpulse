@@ -60,7 +60,7 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun addingAnAllowedWindowFiresCallback() {
+    fun addingAnAllowedWindowAsksForVerificationFirst() {
         var added: TimeWindow? = null
         rule.setContent {
             SettingsScreen(
@@ -72,12 +72,16 @@ class SettingsScreenTest {
         rule.onNodeWithTag("addAllowedWindow").performClick()
         rule.onNodeWithTag("confirmAddWindow").performClick()
 
+        // The picker's Add opens the "are you sure?" prompt — nothing added yet.
+        assertNull(added)
+        rule.onNodeWithTag("verifyAddWindow").performClick()
+
         // Default window offered by the dialog is 09:00–17:00.
         assertEquals(TimeWindow(9 * 60, 17 * 60), added)
     }
 
     @Test
-    fun removingAnAllowedWindowFiresCallback() {
+    fun removingAnAllowedWindowRequiresUuidGate() {
         var removed: TimeWindow? = null
         val window = TimeWindow(9 * 60, 17 * 60)
         rule.setContent {
@@ -91,7 +95,10 @@ class SettingsScreenTest {
         }
 
         rule.onNodeWithText("Remove").performClick()
-        assertEquals(window, removed)
+
+        // The gate appears and the window is NOT removed until the UUID is typed.
+        rule.onNodeWithTag("uuidInput").assertIsDisplayed()
+        assertNull(removed)
     }
 
     @Test

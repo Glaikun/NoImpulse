@@ -30,6 +30,7 @@ import androidx.compose.material3.TimeInput
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +66,8 @@ fun SettingsScreen(
     var showSwitchLauncherGate by remember { mutableStateOf(false) }
     var showAddWindow by remember { mutableStateOf(false) }
     var showDisableRestrictedGate by remember { mutableStateOf(false) }
+    // The allowed-time change awaiting confirmation — see PendingWindow for the two kinds.
+    var pendingWindow by remember { mutableStateOf<PendingWindow?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -159,8 +162,7 @@ fun SettingsScreen(
                 Text(text = "Allowed times", style = MaterialTheme.typography.titleSmall)
                 if (state.allowedWindows.isEmpty()) {
                     Text(
-                        text = "No allowed times yet — non-allowed apps stay restricted every " +
-                            "hour until you add one.",
+                        text = "No allowed times yet — nothing is restricted until you add one.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -168,7 +170,7 @@ fun SettingsScreen(
                 state.allowedWindows.forEach { window ->
                     AllowedWindowRow(
                         window = window,
-                        onRemove = { onRemoveAllowedWindow(window) },
+                        onRemove = { pendingWindow = PendingWindow.Remove(window) },
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -245,9 +247,46 @@ fun SettingsScreen(
             onDismiss = { showAddWindow = false },
             onAdd = { window ->
                 showAddWindow = false
-                onAddAllowedWindow(window)
+                pendingWindow = PendingWindow.Add(window)
             },
         )
+    }
+
+    pendingWindow?.let { pending ->
+        val range = "${formatMinute(pending.window.startMinute)} – " +
+            formatMinute(pending.window.endMinute)
+        when (pending) {
+            is PendingWindow.Add -> AlertDialog(
+                onDismissRequest = { pendingWindow = null },
+                title = { Text("Add allowed time?") },
+                text = { Text("Apps outside your allowlist will be reachable $range.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onAddAllowedWindow(pending.window)
+                            pendingWindow = null
+                        },
+                        modifier = Modifier.testTag("verifyAddWindow"),
+                    ) { Text("Add") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingWindow = null }) { Text("Cancel") }
+                },
+            )
+            is PendingWindow.Remove -> key(pending) {
+                UuidChallengeDialog(
+                    title = "Remove allowed time?",
+                    message = "This removes the $range allowed time. " +
+                        "Type the code below exactly to confirm.",
+                    confirmLabel = "Remove",
+                    onDismiss = { pendingWindow = null },
+                    onConfirmed = {
+                        onRemoveAllowedWindow(pending.window)
+                        pendingWindow = null
+                    },
+                )
+            }
+        }
     }
 
     if (showDisableRestrictedGate) {
@@ -360,6 +399,18 @@ private fun AddWindowDialog(
 /** Formats minutes-since-midnight as "HH:mm". */
 private fun formatMinute(minuteOfDay: Int): String =
     "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
+
+/**
+ * An allowed-time change waiting on the user to confirm it, in the same style as the
+ * drawer's PendingFriction. [Add] gets a light "are you sure?" prompt; [Remove] must
+ * pass the UUID code gate because it changes when apps are reachable.
+ */
+private sealed interface PendingWindow {
+    val window: TimeWindow
+
+    data class Add(override val window: TimeWindow) : PendingWindow
+    data class Remove(override val window: TimeWindow) : PendingWindow
+}
 
 @Preview(showBackground = true)
 @Composable

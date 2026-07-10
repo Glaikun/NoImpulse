@@ -12,14 +12,26 @@ import com.glaikun.noimpulse.model.FrictionType
 import com.glaikun.noimpulse.model.TextSize
 import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import java.time.Clock
+import java.time.Duration
 import java.time.LocalDate
 import javax.inject.Inject
 
-class DataStoreSettingsRepository @Inject constructor(
+class DataStoreSettingsRepository(
     private val dataStore: DataStore<Preferences>,
+    private val clock: Clock,
 ) : SettingsRepository {
+
+    /** Production entry point: Hilt supplies the DataStore and the real clock rides
+     *  along. Tests use the primary constructor with a controllable clock so the
+     *  day-keyed counters can be exercised across a midnight boundary. */
+    @Inject constructor(dataStore: DataStore<Preferences>) :
+        this(dataStore, Clock.systemDefaultZone())
 
     override val introSeen: Flow<Boolean> =
         dataStore.data.map { it[Keys.INTRO_SEEN] ?: false }
@@ -36,6 +48,9 @@ class DataStoreSettingsRepository @Inject constructor(
                 .mapNotNull(::decodeFriction)
                 .groupBy({ it.first }, { it.second })
         }
+
+    override val seededAuthenticators: Flow<Set<String>> =
+        dataStore.data.map { it[Keys.SEEDED_AUTHENTICATORS] ?: emptySet() }
 
     override val restrictedModeEnabled: Flow<Boolean> =
         dataStore.data.map { it[Keys.RESTRICTED_MODE_ENABLED] ?: false }
@@ -61,15 +76,39 @@ class DataStoreSettingsRepository @Inject constructor(
             } ?: TextSize.DEFAULT
         }
 
+    // The day-keyed flows combine with midnightTicks() because their `map` bodies only
+    // re-run when DataStore emits (i.e. on a write). Without the tick, a device idling
+    // across midnight keeps serving yesterday's counts — a limit-blocked app would stay
+    // blocked past the "resets at midnight" promise until some unrelated settings write.
     override val drawerLaunchesToday: Flow<Int> =
-        dataStore.data.map { prefs ->
-            val today = LocalDate.now().toString()
+        combine(dataStore.data, midnightTicks()) { prefs, _ ->
+            val today = LocalDate.now(clock).toString()
             if (prefs[Keys.DRAWER_COUNTER_DATE] == today) {
                 prefs[Keys.DRAWER_LAUNCHES_TODAY] ?: 0
             } else {
                 0
             }
         }
+
+    override val appLaunchesToday: Flow<Map<String, Int>> =
+        combine(dataStore.data, midnightTicks()) { prefs, _ ->
+            val today = LocalDate.now(clock).toString()
+            if (prefs[Keys.APP_LAUNCHES_DATE] == today) {
+                (prefs[Keys.APP_LAUNCHES_TODAY] ?: emptySet())
+                    .mapNotNull(::decodeLaunchCount)
+                    .toMap()
+            } else {
+                emptyMap()
+            }
+        }
+
+    /** Emits immediately, then once shortly after each local midnight. */
+    private fun midnightTicks(): Flow<Unit> = flow {
+        while (true) {
+            emit(Unit)
+            delay(millisUntilNextMidnight(clock))
+        }
+    }
 
     override suspend fun setIntroSeen(seen: Boolean) {
         dataStore.edit { it[Keys.INTRO_SEEN] = seen }
@@ -102,12 +141,37 @@ class DataStoreSettingsRepository @Inject constructor(
     }
 
     override suspend fun recordDrawerLaunch() {
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(clock).toString()
         dataStore.edit { prefs ->
             val sameDay = prefs[Keys.DRAWER_COUNTER_DATE] == today
             val current = if (sameDay) prefs[Keys.DRAWER_LAUNCHES_TODAY] ?: 0 else 0
             prefs[Keys.DRAWER_LAUNCHES_TODAY] = current + 1
             if (!sameDay) prefs[Keys.DRAWER_COUNTER_DATE] = today
+        }
+    }
+
+    override suspend fun recordAppLaunch(packageName: String) {
+        val today = LocalDate.now(clock).toString()
+        dataStore.edit { prefs ->
+            val sameDay = prefs[Keys.APP_LAUNCHES_DATE] == today
+            val counts = if (sameDay) {
+                (prefs[Keys.APP_LAUNCHES_TODAY] ?: emptySet())
+                    .mapNotNull(::decodeLaunchCount)
+                    .toMap()
+            } else {
+                emptyMap()
+            }
+            val updated = counts + (packageName to (counts[packageName] ?: 0) + 1)
+            prefs[Keys.APP_LAUNCHES_TODAY] =
+                updated.mapTo(HashSet()) { (pkg, count) -> encodeLaunchCount(pkg, count) }
+            if (!sameDay) prefs[Keys.APP_LAUNCHES_DATE] = today
+        }
+    }
+
+    override suspend fun markAuthenticatorSeeded(packageName: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.SEEDED_AUTHENTICATORS] =
+                (prefs[Keys.SEEDED_AUTHENTICATORS] ?: emptySet()) + packageName
         }
     }
 
@@ -144,11 +208,24 @@ class DataStoreSettingsRepository @Inject constructor(
         val APP_FRICTION = stringSetPreferencesKey("app_friction")
         val DRAWER_LAUNCHES_TODAY = intPreferencesKey("drawer_launches_today")
         val DRAWER_COUNTER_DATE = stringPreferencesKey("drawer_counter_date")
+        val APP_LAUNCHES_TODAY = stringSetPreferencesKey("app_launches_today")
+        val APP_LAUNCHES_DATE = stringPreferencesKey("app_launches_date")
+        val SEEDED_AUTHENTICATORS = stringSetPreferencesKey("seeded_authenticators")
         val RESTRICTED_MODE_ENABLED = booleanPreferencesKey("restricted_mode_enabled")
         val ALLOWED_TIME_WINDOWS = stringSetPreferencesKey("allowed_time_windows")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val TEXT_SIZE = stringPreferencesKey("text_size")
     }
+}
+
+/**
+ * Milliseconds from the clock's now until the next local midnight. Always positive:
+ * the next midnight is strictly after now, and `atStartOfDay(zone)` resolves DST gaps
+ * to the first valid instant of the day.
+ */
+internal fun millisUntilNextMidnight(clock: Clock): Long {
+    val nextMidnight = LocalDate.now(clock).plusDays(1).atStartOfDay(clock.zone).toInstant()
+    return Duration.between(clock.instant(), nextMidnight).toMillis()
 }
 
 /** Encodes a rule as "package|TYPE|param". Package names never contain '|'. */
@@ -162,6 +239,17 @@ private fun decodeFriction(encoded: String): Pair<String, FrictionRule>? {
     val type = FrictionType.entries.find { it.name == parts[1] } ?: return null
     val param = parts[2].toIntOrNull() ?: return null
     return parts[0] to FrictionRule(type, param)
+}
+
+/** Encodes a per-app launch count as "package|count". Package names never contain '|'. */
+private fun encodeLaunchCount(packageName: String, count: Int): String = "$packageName|$count"
+
+/** Inverse of [encodeLaunchCount]; returns null for malformed entries. */
+private fun decodeLaunchCount(encoded: String): Pair<String, Int>? {
+    val parts = encoded.split('|')
+    if (parts.size != 2) return null
+    val count = parts[1].toIntOrNull() ?: return null
+    return parts[0] to count
 }
 
 /** Encodes a window as "start|end" (minutes since midnight). */

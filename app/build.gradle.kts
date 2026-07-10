@@ -1,5 +1,3 @@
-import org.jetbrains.kotlin.codegen.optimization.common.analyze
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -19,7 +17,9 @@ android {
         versionCode = 4
         versionName = "0.3.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Swaps in HiltTestApplication so app/src/androidTest can launch @AndroidEntryPoint
+        // activities under Hilt (see HiltTestRunner.kt).
+        testInstrumentationRunner = "com.glaikun.noimpulse.HiltTestRunner"
     }
 
     buildTypes {
@@ -40,6 +40,26 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    testOptions {
+        unitTests {
+            // Robolectric needs app resources/themes on the classpath to render real
+            // Compose UI (ui/NoImpulseContent.kt) in the integration suite under app/src/test.
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+// Unit tests run against the debug variant only. The integration suite's
+// createComposeRule() needs the compose-test host activity, which ui-test-manifest
+// merges into the *debug* app manifest via debugImplementation; the release manifest
+// must not ship a test activity, so under testReleaseUnitTest the launch fails
+// (RoboMonitoringInstrumentation: "Unable to resolve activity"). The suite has no
+// build-type-specific logic, so the release run added no coverage — only duplication.
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) {
+        it.hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
     }
 }
 
@@ -71,10 +91,14 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.androidx.core)
     testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

@@ -11,4 +11,10 @@ interface UsageStatsSource {
 
     /** Package names ordered most-recently-used first. Empty if Usage Access is not granted. */
     fun recentlyUsedPackages(): List<String>
+
+    /**
+     * Today's foreground minutes per package, for the daily-minutes limit friction.
+     * Empty if Usage Access is not granted.
+     */
+    fun foregroundMinutesToday(): Map<String, Int>
 }

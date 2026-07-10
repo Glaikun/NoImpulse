@@ -9,18 +9,17 @@ import com.glaikun.noimpulse.model.TextSize
 import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
 import com.glaikun.noimpulse.data.FrictionSessionLedger
-import com.glaikun.noimpulse.data.AccessibilityStatusSource
-import com.glaikun.noimpulse.data.LauncherAppsSource
-import com.glaikun.noimpulse.data.SettingsRepository
-import com.glaikun.noimpulse.data.UsageStatsSource
+import com.glaikun.noimpulse.testing.FakeAccessibilityStatusSource
+import com.glaikun.noimpulse.testing.FakeLauncherAppsSource
+import com.glaikun.noimpulse.testing.FakeSettingsRepository
+import com.glaikun.noimpulse.testing.FakeUsageStatsSource
+import com.glaikun.noimpulse.testing.MutableUsageStatsSource
+import com.glaikun.noimpulse.testing.homeViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -51,33 +50,6 @@ class HomeViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
-    }
-
-    /**
-     * Builds the ViewModel with the test scheduler driving its I/O dispatcher, and
-     * starts collecting [HomeViewModel.state] on the [backgroundScope] so the
-     * `WhileSubscribed` flow becomes active. Returns once the first combined state
-     * has been produced ([runCurrent] settles all work scheduled at virtual time 0,
-     * without entering the never-ending tick/poll delays).
-     */
-    private fun TestScope.activeViewModel(
-        usage: DailyUsage?,
-        launcher: LauncherAppsSource = FakeLauncherAppsSource(),
-        settings: SettingsRepository = FakeSettingsRepository(setupComplete = true),
-        accessibility: AccessibilityStatusSource = FakeAccessibilityStatusSource(),
-    ): HomeViewModel {
-        val vm = HomeViewModel(
-            app = ApplicationProvider.getApplicationContext(),
-            usageStats = FakeUsageStatsSource(usage),
-            launcher = launcher,
-            settings = settings,
-            accessibility = accessibility,
-            frictionLedger = FrictionSessionLedger(),
-            ioDispatcher = StandardTestDispatcher(testScheduler),
-        )
-        backgroundScope.launch { vm.state.collect {} }
-        runCurrent()
-        return vm
     }
 
     // ── Pure formatting helpers ───────────────────────────────────────────────
@@ -121,32 +93,32 @@ class HomeViewModelTest {
 
     @Test
     fun `state pickupCount reflects fake source value`() = runTest {
-        val vm = activeViewModel(DailyUsage(pickupCount = 7, screenOnMinutes = 90))
+        val vm = homeViewModel(DailyUsage(pickupCount = 7, screenOnMinutes = 90))
         assertEquals(7, vm.state.value.pickupCount)
     }
 
     @Test
     fun `state screenOnMinutes reflects fake source value`() = runTest {
-        val vm = activeViewModel(DailyUsage(pickupCount = 3, screenOnMinutes = 45))
+        val vm = homeViewModel(DailyUsage(pickupCount = 3, screenOnMinutes = 45))
         assertEquals(45, vm.state.value.screenOnMinutes)
     }
 
     @Test
     fun `state pickupCount and screenOnMinutes are null when source returns null`() = runTest {
-        val vm = activeViewModel(null)
+        val vm = homeViewModel(null)
         assertNull(vm.state.value.pickupCount)
         assertNull(vm.state.value.screenOnMinutes)
     }
 
     @Test
     fun `usageAccessGranted is true when access is granted`() = runTest {
-        val vm = activeViewModel(DailyUsage(pickupCount = 0, screenOnMinutes = 0))
+        val vm = homeViewModel(DailyUsage(pickupCount = 0, screenOnMinutes = 0))
         assertTrue(vm.state.value.usageAccessGranted)
     }
 
     @Test
     fun `usageAccessGranted is false when access is not granted`() = runTest {
-        val vm = activeViewModel(null)
+        val vm = homeViewModel(null)
         assertFalse(vm.state.value.usageAccessGranted)
     }
 
@@ -176,7 +148,7 @@ class HomeViewModelTest {
 
     @Test
     fun `isDefaultHome reflects launcher source`() = runTest {
-        val vm = activeViewModel(null, launcher = FakeLauncherAppsSource(defaultHome = true))
+        val vm = homeViewModel(null, launcher = FakeLauncherAppsSource(defaultHome = true))
         assertTrue(vm.state.value.isDefaultHome)
     }
 
@@ -184,14 +156,14 @@ class HomeViewModelTest {
 
     @Test
     fun `setupComplete reflects settings repository`() = runTest {
-        val vm = activeViewModel(null, settings = FakeSettingsRepository(setupComplete = false))
+        val vm = homeViewModel(null, settings = FakeSettingsRepository(setupComplete = false))
         assertEquals(false, vm.state.value.setupComplete)
     }
 
     @Test
     fun `completeSetup persists setupComplete true`() = runTest {
         val settings = FakeSettingsRepository(setupComplete = false)
-        val vm = activeViewModel(null, settings = settings)
+        val vm = homeViewModel(null, settings = settings)
         assertEquals(false, vm.state.value.setupComplete)
 
         vm.completeSetup()
@@ -203,7 +175,7 @@ class HomeViewModelTest {
     @Test
     fun `setAppAllowed adds the app to allowedApps`() = runTest {
         val launcher = FakeLauncherAppsSource(installed = listOf(AppEntry("Maps", "com.maps")))
-        val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+        val vm = homeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
         assertTrue(vm.state.value.allowedApps.isEmpty())
 
         vm.setAppAllowed("com.maps", true)
@@ -221,7 +193,7 @@ class HomeViewModelTest {
                 installed = listOf(AppEntry("Phone", "com.phone"), AppEntry("Maps", "com.maps")),
                 alwaysAllowed = listOf("com.phone", "com.maps"),
             )
-            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            val vm = homeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
             runCurrent()
 
             assertEquals(
@@ -238,7 +210,7 @@ class HomeViewModelTest {
                 installed = listOf(AppEntry("Phone", "com.phone")),
                 alwaysAllowed = listOf("com.phone"),
             )
-            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            val vm = homeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
             runCurrent()
 
             vm.setAppAllowed("com.phone", false)   // guarded — must be a no-op
@@ -255,7 +227,7 @@ class HomeViewModelTest {
                 installed = listOf(AppEntry("Phone", "com.phone")),
                 alwaysAllowed = listOf("com.phone"),
             )
-            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            val vm = homeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
             runCurrent()
 
             vm.addAppFriction("com.phone", FrictionRule(FrictionType.MATH, 1))   // guarded
@@ -269,7 +241,7 @@ class HomeViewModelTest {
     fun `lockedPackages exposes the always-allowed core`() {
         runTest {
             val launcher = FakeLauncherAppsSource(alwaysAllowed = listOf("com.phone", "com.maps"))
-            val vm = activeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
+            val vm = homeViewModel(null, launcher = launcher, settings = FakeSettingsRepository())
             backgroundScope.launch { vm.lockedPackages.collect {} }
             runCurrent()
 
@@ -281,27 +253,27 @@ class HomeViewModelTest {
 
     @Test
     fun `restricted mode defaults to off and not restricted`() = runTest {
-        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        val vm = homeViewModel(null, settings = FakeSettingsRepository())
         assertFalse(vm.state.value.restrictedModeEnabled)
         assertFalse(vm.state.value.isRestrictedNow)
     }
 
     @Test
-    fun `enabling restricted mode with no windows makes it restricted now`() = runTest {
+    fun `enabling restricted mode with no windows is not restricted — no schedule yet`() = runTest {
         val settings = FakeSettingsRepository()
-        val vm = activeViewModel(null, settings = settings)
+        val vm = homeViewModel(null, settings = settings)
 
         vm.setRestrictedModeEnabled(true)
         runCurrent()
 
         assertTrue(vm.state.value.restrictedModeEnabled)
-        assertTrue(vm.state.value.isRestrictedNow)
+        assertFalse(vm.state.value.isRestrictedNow)
     }
 
     @Test
     fun `a whole-day allowed window keeps it unrestricted`() = runTest {
         val settings = FakeSettingsRepository()
-        val vm = activeViewModel(null, settings = settings)
+        val vm = homeViewModel(null, settings = settings)
 
         vm.setRestrictedModeEnabled(true)
         vm.addAllowedWindow(TimeWindow(0, 0))   // 00:00–00:00 covers the whole day
@@ -311,18 +283,57 @@ class HomeViewModelTest {
         assertFalse(vm.state.value.isRestrictedNow)
     }
 
+    @Test
+    fun `removing the last allowed window lifts the restriction so apps can open`() = runTest {
+        val vm = homeViewModel(null, settings = FakeSettingsRepository())
+        // A window that never covers the current time (starts two hours from now),
+        // so enabling the mode restricts apps regardless of when the test runs.
+        val now = minuteOfDay()
+        val notNow = TimeWindow((now + 120) % 1440, (now + 180) % 1440)
+
+        vm.setRestrictedModeEnabled(true)
+        vm.addAllowedWindow(notNow)
+        runCurrent()
+        assertTrue(vm.state.value.isRestrictedNow)
+
+        vm.removeAllowedWindow(notNow)
+        runCurrent()
+
+        assertTrue(vm.state.value.allowedWindows.isEmpty())
+        assertFalse(vm.state.value.isRestrictedNow)   // nothing to enforce — apps open
+    }
+
+    @Test
+    fun `removing the active window with another remaining restricts immediately`() = runTest {
+        val vm = homeViewModel(null, settings = FakeSettingsRepository())
+        val now = minuteOfDay()
+        val notNow = TimeWindow((now + 120) % 1440, (now + 180) % 1440)
+
+        vm.setRestrictedModeEnabled(true)
+        vm.addAllowedWindow(TimeWindow(0, 0))   // whole day — always active
+        vm.addAllowedWindow(notNow)
+        runCurrent()
+        assertFalse(vm.state.value.isRestrictedNow)
+
+        vm.removeAllowedWindow(TimeWindow(0, 0))
+        runCurrent()
+
+        // Only the not-now window remains, so restriction kicks in straight away.
+        assertTrue(vm.state.value.isRestrictedNow)
+    }
+
     // ── Appearance ────────────────────────────────────────────────────────────
 
     @Test
     fun `theme and text size default to dark and default`() = runTest {
-        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        val vm = homeViewModel(null, settings = FakeSettingsRepository())
         assertEquals(ThemeMode.DARK, vm.state.value.themeMode)
         assertEquals(TextSize.DEFAULT, vm.state.value.textSize)
     }
 
     @Test
     fun `setThemeMode and setTextSize propagate to state`() = runTest {
-        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        val vm = homeViewModel(null, settings = FakeSettingsRepository())
 
         vm.setThemeMode(ThemeMode.LIGHT)
         vm.setTextSize(TextSize.LARGEST)
@@ -334,7 +345,7 @@ class HomeViewModelTest {
 
     @Test
     fun `app frictions stack and can be removed individually`() = runTest {
-        val vm = activeViewModel(null, settings = FakeSettingsRepository())
+        val vm = homeViewModel(null, settings = FakeSettingsRepository())
         assertTrue(vm.state.value.appFriction.isEmpty())
 
         vm.addAppFriction("com.maps", FrictionRule(FrictionType.TIMED_WAIT, 30))
@@ -368,7 +379,7 @@ class HomeViewModelTest {
             essentials = listOf("com.settings", "com.phone", "com.missing"),
         )
         val settings = FakeSettingsRepository(setupComplete = false)
-        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+        val vm = homeViewModel(null, launcher = launcher, settings = settings)
 
         assertEquals(
             setOf("com.settings", "com.phone"),    // 'com.missing' skipped (not launchable)
@@ -386,7 +397,7 @@ class HomeViewModelTest {
             essentials = listOf("com.settings"),
         )
         val settings = FakeSettingsRepository(setupComplete = false, allowed = setOf("com.maps"))
-        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+        val vm = homeViewModel(null, launcher = launcher, settings = settings)
 
         assertEquals(
             setOf("com.maps"),                     // 'com.settings' NOT added — user's allowlist preserved
@@ -401,7 +412,7 @@ class HomeViewModelTest {
             essentials = listOf("com.settings"),
         )
         val settings = FakeSettingsRepository(setupComplete = true)
-        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+        val vm = homeViewModel(null, launcher = launcher, settings = settings)
 
         assertTrue(vm.state.value.allowedApps.isEmpty())
     }
@@ -467,13 +478,64 @@ class HomeViewModelTest {
     @Test
     fun `recordDrawerLaunch increments counter for non-allowlisted package`() = runTest {
         val settings = FakeSettingsRepository(setupComplete = true)
-        val vm = activeViewModel(null, settings = settings)
+        val vm = homeViewModel(null, settings = settings)
         assertEquals(0, vm.state.value.drawerLaunchesToday)
 
         vm.recordDrawerLaunch("com.twitter")
         runCurrent()
 
         assertEquals(1, vm.state.value.drawerLaunchesToday)
+    }
+
+    @Test
+    fun `recordDrawerLaunch bumps the per-app count for the launched package`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = homeViewModel(null, settings = settings)
+
+        vm.recordDrawerLaunch("com.twitter")
+        vm.recordDrawerLaunch("com.twitter")
+        vm.recordDrawerLaunch("com.reddit")
+        runCurrent()
+
+        assertEquals(
+            mapOf("com.twitter" to 2, "com.reddit" to 1),
+            vm.state.value.appLaunchesToday,
+        )
+    }
+
+    @Test
+    fun `state appUsageMinutesToday reflects the usage source, for the daily-minutes limit`() = runTest {
+        val usage = DailyUsage(pickupCount = 1, screenOnMinutes = 50)
+        val vm = homeViewModel(
+            usage,
+            usageStats = FakeUsageStatsSource(
+                usage,
+                foregroundMinutes = mapOf("com.twitter" to 42, "com.reddit" to 5),
+            ),
+        )
+
+        assertEquals(
+            mapOf("com.twitter" to 42, "com.reddit" to 5),
+            vm.state.value.appUsageMinutesToday,
+        )
+    }
+
+    @Test
+    fun `state appUsageMinutesToday is empty when the usage source has no data`() = runTest {
+        val vm = homeViewModel(null)
+
+        assertTrue(vm.state.value.appUsageMinutesToday.isEmpty())
+    }
+
+    @Test
+    fun `recordDrawerLaunch does NOT bump the per-app count for an allowlisted package`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true, allowed = setOf("com.twitter"))
+        val vm = homeViewModel(null, settings = settings)
+
+        vm.recordDrawerLaunch("com.twitter")
+        runCurrent()
+
+        assertTrue(vm.state.value.appLaunchesToday.isEmpty())
     }
 
     @Test
@@ -485,7 +547,7 @@ class HomeViewModelTest {
             setupComplete = true,
             allowed = setOf("com.twitter"),
         )
-        val vm = activeViewModel(null, launcher = launcher, settings = settings)
+        val vm = homeViewModel(null, launcher = launcher, settings = settings)
         assertEquals(0, vm.state.value.drawerLaunchesToday)
 
         vm.recordDrawerLaunch("com.twitter")
@@ -495,14 +557,72 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `an installed authenticator is auto-added to the allowlist and marked seeded`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = homeViewModel(
+            null,
+            launcher = FakeLauncherAppsSource(
+                installedAuthenticators = listOf("com.beemdevelopment.aegis"),
+            ),
+            settings = settings,
+        )
+
+        assertTrue(vm.state.value.allowedApps.any { it.packageName == "com.beemdevelopment.aegis" })
+        assertEquals(setOf("com.beemdevelopment.aegis"), settings.seededAuthenticators.first())
+    }
+
+    @Test
+    fun `a seeded authenticator the user removed is NOT re-added on the next start`() = runTest {
+        // Seeded on a previous start, then deliberately removed from the allowlist:
+        // the one-shot marker must keep that removal sticky.
+        val settings = FakeSettingsRepository(
+            setupComplete = true,
+            seededAuthenticators = setOf("com.beemdevelopment.aegis"),
+        )
+        val vm = homeViewModel(
+            null,
+            launcher = FakeLauncherAppsSource(
+                installedAuthenticators = listOf("com.beemdevelopment.aegis"),
+            ),
+            settings = settings,
+        )
+
+        assertTrue(vm.state.value.allowedApps.none { it.packageName == "com.beemdevelopment.aegis" })
+    }
+
+    @Test
+    fun `recordRefrictionPass bumps the per-app count but not the drawer counter`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = homeViewModel(null, settings = settings)
+
+        vm.recordRefrictionPass("com.twitter")
+        runCurrent()
+
+        // Counts toward the daily-launches cap, but re-friction is not a drawer launch.
+        assertEquals(mapOf("com.twitter" to 1), vm.state.value.appLaunchesToday)
+        assertEquals(0, vm.state.value.drawerLaunchesToday)
+    }
+
+    @Test
+    fun `recordRefrictionPass does NOT count an allowlisted package`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true, allowed = setOf("com.twitter"))
+        val vm = homeViewModel(null, settings = settings)
+
+        vm.recordRefrictionPass("com.twitter")
+        runCurrent()
+
+        assertTrue(vm.state.value.appLaunchesToday.isEmpty())
+    }
+
+    @Test
     fun `state time is populated after first tick`() = runTest {
-        val vm = activeViewModel(null)
+        val vm = homeViewModel(null)
         assertTrue(vm.state.value.time.isNotBlank())
     }
 
     @Test
     fun `state date is populated after first tick`() = runTest {
-        val vm = activeViewModel(null)
+        val vm = homeViewModel(null)
         assertTrue(vm.state.value.date.isNotBlank())
     }
 
@@ -527,7 +647,7 @@ class HomeViewModelTest {
 
     @Test
     fun `fresh install boots to Intro screen`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             settings = FakeSettingsRepository(introSeen = false, setupComplete = false),
         )
@@ -536,7 +656,7 @@ class HomeViewModelTest {
 
     @Test
     fun `intro acknowledged but setup incomplete boots to Setup`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             settings = FakeSettingsRepository(introSeen = true, setupComplete = false),
         )
@@ -545,7 +665,7 @@ class HomeViewModelTest {
 
     @Test
     fun `intro and setup both done boots to Home`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
         )
@@ -557,7 +677,7 @@ class HomeViewModelTest {
     @Test
     fun `completeIntro persists introSeen and moves screen to Setup`() = runTest {
         val settings = FakeSettingsRepository(introSeen = false, setupComplete = false)
-        val vm = activeViewModel(usage = null, settings = settings)
+        val vm = homeViewModel(usage = null, settings = settings)
         assertEquals(AppScreen.Intro, vm.screen.value)
 
         vm.completeIntro()
@@ -570,7 +690,7 @@ class HomeViewModelTest {
     @Test
     fun `completeSetup persists setupComplete and moves screen to Home`() = runTest {
         val settings = FakeSettingsRepository(introSeen = true, setupComplete = false)
-        val vm = activeViewModel(usage = null, settings = settings)
+        val vm = homeViewModel(usage = null, settings = settings)
         assertEquals(AppScreen.Setup, vm.screen.value)
 
         vm.completeSetup()
@@ -582,7 +702,7 @@ class HomeViewModelTest {
 
     @Test
     fun `openDrawer from Home moves screen to Drawer`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
         )
@@ -594,7 +714,7 @@ class HomeViewModelTest {
 
     @Test
     fun `closeDrawer from Drawer returns to Home`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
         )
@@ -607,7 +727,7 @@ class HomeViewModelTest {
 
     @Test
     fun `requestRefriction moves screen to Refriction with package`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
         )
@@ -618,8 +738,24 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `requestRefriction carries the watcher's over-limit verdict into the screen`() = runTest {
+        val vm = homeViewModel(
+            usage = null,
+            settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
+        )
+        val limit = FrictionRule(FrictionType.DAILY_MINUTES, 30)
+
+        vm.requestRefriction("com.twitter.android", overLimit = limit)
+
+        assertEquals(
+            AppScreen.Refriction("com.twitter.android", overLimit = limit),
+            vm.screen.value,
+        )
+    }
+
+    @Test
     fun `resolveRefriction returns screen to Home`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             settings = FakeSettingsRepository(introSeen = true, setupComplete = true),
         )
@@ -657,140 +793,10 @@ class HomeViewModelTest {
 
     @Test
     fun `accessibilityGranted reflects status source`() = runTest {
-        val vm = activeViewModel(
+        val vm = homeViewModel(
             usage = null,
             accessibility = FakeAccessibilityStatusSource(enabled = true),
         )
         assertTrue(vm.state.value.accessibilityGranted)
     }
-}
-
-// ── Test double ──────────────────────────────────────────────────────────────
-
-private class FakeUsageStatsSource(
-    private val result: DailyUsage?,
-    private val granted: Boolean = result != null,
-    private val recents: List<String> = emptyList(),
-) : UsageStatsSource {
-    override fun hasUsageAccess(): Boolean = granted
-    override fun queryToday(): DailyUsage? = result
-    override fun recentlyUsedPackages(): List<String> = recents
-}
-
-/** Usage source whose access can be flipped on at runtime, for refresh tests. */
-private class MutableUsageStatsSource : UsageStatsSource {
-    @Volatile private var result: DailyUsage? = null
-    @Volatile private var granted: Boolean = false
-
-    fun grant(usage: DailyUsage) {
-        result = usage
-        granted = true
-    }
-
-    override fun hasUsageAccess(): Boolean = granted
-    override fun queryToday(): DailyUsage? = if (granted) result else null
-    override fun recentlyUsedPackages(): List<String> = emptyList()
-}
-
-private class FakeLauncherAppsSource(
-    @Volatile var defaultHome: Boolean = false,
-    private val installed: List<AppEntry> = emptyList(),
-    private val essentials: List<String> = emptyList(),
-    private val alwaysAllowed: List<String> = emptyList(),
-) : LauncherAppsSource {
-    override fun isDefaultHome(): Boolean = defaultHome
-    override fun installedLaunchableApps(): List<AppEntry> = installed
-    override fun appEntryFor(packageName: String): AppEntry? =
-        installed.find { it.packageName == packageName } ?: AppEntry(packageName, packageName)
-    override fun loadIcon(packageName: String): android.graphics.drawable.Drawable? = null
-    override fun homeScreenApps(): List<AppEntry> = emptyList()
-    override fun essentialPackages(): List<String> = essentials
-    override fun alwaysAllowedPackages(): List<String> = alwaysAllowed
-}
-
-private class FakeSettingsRepository(
-    introSeen: Boolean = true,
-    setupComplete: Boolean = false,
-    allowed: Set<String> = emptySet(),
-    drawerLaunches: Int = 0,
-) : SettingsRepository {
-    private val _introSeen = MutableStateFlow(introSeen)
-    private val _setupComplete = MutableStateFlow(setupComplete)
-    private val _allowed = MutableStateFlow(allowed)
-    private val _drawerLaunches = MutableStateFlow(drawerLaunches)
-    private val _appFriction = MutableStateFlow<Map<String, List<FrictionRule>>>(emptyMap())
-    private val _restrictedModeEnabled = MutableStateFlow(false)
-    private val _allowedTimeWindows = MutableStateFlow<List<TimeWindow>>(emptyList())
-    private val _themeMode = MutableStateFlow(ThemeMode.DARK)
-    private val _textSize = MutableStateFlow(TextSize.DEFAULT)
-
-    override val introSeen: Flow<Boolean> = _introSeen
-    override val setupComplete: Flow<Boolean> = _setupComplete
-    override val allowedPackages: Flow<Set<String>> = _allowed
-    override val appFriction: Flow<Map<String, List<FrictionRule>>> = _appFriction
-    override val drawerLaunchesToday: Flow<Int> = _drawerLaunches
-    override val restrictedModeEnabled: Flow<Boolean> = _restrictedModeEnabled
-    override val allowedTimeWindows: Flow<List<TimeWindow>> = _allowedTimeWindows
-    override val themeMode: Flow<ThemeMode> = _themeMode
-    override val textSize: Flow<TextSize> = _textSize
-
-    override suspend fun setIntroSeen(seen: Boolean) {
-        _introSeen.value = seen
-    }
-
-    override suspend fun setSetupComplete(complete: Boolean) {
-        _setupComplete.value = complete
-    }
-
-    override suspend fun setAppAllowed(packageName: String, allowed: Boolean) {
-        _allowed.value =
-            if (allowed) _allowed.value + packageName else _allowed.value - packageName
-    }
-
-    override suspend fun addAppFriction(packageName: String, rule: FrictionRule) {
-        val current = _appFriction.value[packageName].orEmpty()
-        if (rule !in current) {
-            _appFriction.value = _appFriction.value + (packageName to (current + rule))
-        }
-    }
-
-    override suspend fun removeAppFriction(packageName: String, rule: FrictionRule) {
-        val updated = _appFriction.value[packageName].orEmpty() - rule
-        _appFriction.value =
-            if (updated.isEmpty()) _appFriction.value - packageName
-            else _appFriction.value + (packageName to updated)
-    }
-
-    override suspend fun recordDrawerLaunch() {
-        _drawerLaunches.value = _drawerLaunches.value + 1
-    }
-
-    override suspend fun setRestrictedModeEnabled(enabled: Boolean) {
-        _restrictedModeEnabled.value = enabled
-    }
-
-    override suspend fun addAllowedWindow(window: TimeWindow) {
-        if (window !in _allowedTimeWindows.value) {
-            _allowedTimeWindows.value = _allowedTimeWindows.value + window
-        }
-    }
-
-    override suspend fun removeAllowedWindow(window: TimeWindow) {
-        _allowedTimeWindows.value = _allowedTimeWindows.value - window
-    }
-
-    override suspend fun setThemeMode(mode: ThemeMode) {
-        _themeMode.value = mode
-    }
-
-    override suspend fun setTextSize(size: TextSize) {
-        _textSize.value = size
-    }
-}
-
-/** Test double for [AccessibilityStatusSource]. Defaults to "not granted". */
-private class FakeAccessibilityStatusSource(
-    @Volatile var enabled: Boolean = false,
-) : AccessibilityStatusSource {
-    override fun isFrictionWatchEnabled(): Boolean = enabled
 }

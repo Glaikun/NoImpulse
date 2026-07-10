@@ -121,7 +121,7 @@ fun HomeScreen(
                         value = state.pickupCount?.toString() ?: "--",
                     )
                     StatChip(
-                        label = "Today's Screen Time",
+                        label = "Today's Usage",
                         value = state.screenOnMinutes?.let { formatHours(it) } ?: "--",
                     )
                 }

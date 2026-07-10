@@ -31,10 +31,18 @@ interface LauncherAppsSource {
     fun essentialPackages(): List<String>
 
     /**
-     * The non-negotiable core: phone, settings, messages, camera, maps (the device defaults).
-     * These stay allowlisted and friction-free at all times — they can't be removed from the
-     * allowlist, can't have friction added, and aren't blocked by Restricted Mode. Packages
-     * that can't be resolved on this device are omitted.
+     * The non-negotiable core: phone, settings, messages, camera, maps, clock, contacts
+     * (the device defaults). These stay allowlisted and friction-free at all times — they
+     * can't be removed from the allowlist, can't have friction added, and aren't blocked
+     * by Restricted Mode. Packages that can't be resolved on this device are omitted.
      */
     fun alwaysAllowedPackages(): List<String>
+
+    /**
+     * Installed 2FA authenticator apps, matched against a best-effort list of known
+     * packages (there is no system role/intent for "the authenticator"). Used to seed
+     * the allowlist once per app — friction on an authenticator can lock the user out
+     * of *other* accounts, so they start friction-free but stay fully user-controlled.
+     */
+    fun installedAuthenticatorPackages(): List<String>
 }

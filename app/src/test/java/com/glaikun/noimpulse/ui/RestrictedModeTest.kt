@@ -61,8 +61,24 @@ class RestrictedModeTest {
     }
 
     @Test
-    fun `enabled with no windows is always restricted`() {
-        assertTrue(isRestrictedNow(enabled = true, allowedWindows = emptyList(), minuteOfDay = at(12)))
+    fun `enabled with no windows is not restricted — there is no schedule to enforce`() {
+        assertFalse(isRestrictedNow(enabled = true, allowedWindows = emptyList(), minuteOfDay = at(12)))
+    }
+
+    @Test
+    fun `removing the active window stays unrestricted when another window still covers now`() {
+        val morningToMidnight = TimeWindow(at(7), at(0))    // 07:00 – 12:00am (midnight)
+        val afternoon = TimeWindow(at(16), at(20))          // 04:00pm – 08:00pm
+        val sixPm = at(18)
+
+        // At 6pm both windows cover the current time.
+        val windows = listOf(morningToMidnight, afternoon)
+        assertFalse(isRestrictedNow(enabled = true, allowedWindows = windows, minuteOfDay = sixPm))
+
+        // Remove the 4–8pm window we're currently in — 7am–midnight still covers 6pm,
+        // so apps must NOT become restricted.
+        val remaining = windows - afternoon
+        assertFalse(isRestrictedNow(enabled = true, allowedWindows = remaining, minuteOfDay = sixPm))
     }
 
     @Test

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -49,14 +51,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionKind
 import com.glaikun.noimpulse.model.FrictionRule
 import com.glaikun.noimpulse.model.FrictionType
 import com.glaikun.noimpulse.ui.AddToAllowlistDialog
 import com.glaikun.noimpulse.ui.AppIcon
+import com.glaikun.noimpulse.ui.DailyLimitDialog
 import com.glaikun.noimpulse.ui.FrictionGate
 import com.glaikun.noimpulse.ui.UuidChallengeDialog
-import com.glaikun.noimpulse.ui.tokensRequired
+import com.glaikun.noimpulse.ui.exceededDailyLimit
 import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
+import com.glaikun.noimpulse.ui.tokensRequired
 
 @Composable
 fun AppDrawerScreen(
@@ -70,6 +75,8 @@ fun AppDrawerScreen(
     onRestrictedTap: () -> Unit = {},
     loadIcon: (String) -> Drawable? = { null },
     appFriction: Map<String, List<FrictionRule>> = emptyMap(),
+    appLaunchesToday: Map<String, Int> = emptyMap(),
+    appUsageMinutesToday: Map<String, Int> = emptyMap(),
     onSetAppAllowed: (String, Boolean) -> Unit = { _, _ -> },
     onAddAppFriction: (String, FrictionRule) -> Unit = { _, _ -> },
     onRemoveAppFriction: (String, FrictionRule) -> Unit = { _, _ -> },
@@ -87,10 +94,8 @@ fun AppDrawerScreen(
     var pendingApp by remember { mutableStateOf<AppEntry?>(null) }
     var sheetApp by remember { mutableStateOf<AppEntry?>(null) }
     var addGateApp by remember { mutableStateOf<AppEntry?>(null) }
-    // The (app, rule) whose removal is awaiting the UUID gate.
-    var removeFrictionTarget by remember { mutableStateOf<Pair<AppEntry, FrictionRule>?>(null) }
-    // The (app, rule) whose addition is awaiting the "are you sure?" prompt.
-    var confirmAddTarget by remember { mutableStateOf<Pair<AppEntry, FrictionRule>?>(null) }
+    // The friction change awaiting confirmation — see PendingFriction for the two kinds.
+    var pendingFriction by remember { mutableStateOf<PendingFriction?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -164,19 +169,29 @@ fun AppDrawerScreen(
 
     pendingApp?.let { app ->
         // Friction applies only to non-allowlisted apps (allowlisted ones launch directly,
-        // above). FrictionGate iterates assigned rules in sequence, or falls back to the
-        // default daily-scaling token challenge when no rules are assigned.
-        FrictionGate(
-            app = app,
+        // above). An exceeded daily limit blocks the app outright until midnight;
+        // otherwise FrictionGate iterates assigned rules in sequence, or falls back to
+        // the default daily-scaling token challenge when no rules are assigned.
+        val overLimit = exceededDailyLimit(
             rules = appFriction[app.packageName].orEmpty(),
-            drawerLaunchesToday = drawerLaunchesToday,
-            tokenCount = tokenCount,
-            onCancel = { pendingApp = null },
-            onComplete = {
-                pendingApp = null
-                onLaunchAfterChallenge(app.packageName)
-            },
+            launchesToday = appLaunchesToday[app.packageName] ?: 0,
+            minutesToday = appUsageMinutesToday[app.packageName] ?: 0,
         )
+        if (overLimit != null) {
+            DailyLimitDialog(app = app, rule = overLimit, onDismiss = { pendingApp = null })
+        } else {
+            FrictionGate(
+                app = app,
+                rules = appFriction[app.packageName].orEmpty(),
+                drawerLaunchesToday = drawerLaunchesToday,
+                tokenCount = tokenCount,
+                onCancel = { pendingApp = null },
+                onComplete = {
+                    pendingApp = null
+                    onLaunchAfterChallenge(app.packageName)
+                },
+            )
+        }
     }
 
     sheetApp?.let { app ->
@@ -194,8 +209,7 @@ fun AppDrawerScreen(
                 onSetAppAllowed(app.packageName, false)
                 sheetApp = null
             },
-            onRequestAddFriction = { confirmAddTarget = app to it },
-            onRequestRemoveFriction = { removeFrictionTarget = app to it },
+            onRequestChange = { pendingFriction = it },
         )
     }
 
@@ -210,45 +224,43 @@ fun AppDrawerScreen(
         )
     }
 
-    confirmAddTarget?.let { (app, rule) ->
-        AlertDialog(
-            onDismissRequest = { confirmAddTarget = null },
-            title = { Text("Apply friction?") },
-            text = { Text("Make ${app.label} harder to open with this friction?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        // Only one timed wait per app — replace any existing timer.
-                        if (rule.type == FrictionType.TIMED_WAIT) {
-                            appFriction[app.packageName].orEmpty()
-                                .filter { it.type == FrictionType.TIMED_WAIT }
-                                .forEach { onRemoveAppFriction(app.packageName, it) }
-                        }
-                        onAddAppFriction(app.packageName, rule)
-                        confirmAddTarget = null
-                    },
-                    modifier = Modifier.testTag("confirmAddFriction"),
-                ) { Text("Apply") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmAddTarget = null }) { Text("Cancel") }
-            },
-        )
-    }
-
-    removeFrictionTarget?.let { (app, rule) ->
-        key(app.packageName, rule) {
-            UuidChallengeDialog(
-                title = "Remove friction?",
-                message = "Removing friction makes ${app.label} easier to open. " +
-                    "Type the code below exactly to confirm.",
-                confirmLabel = "Remove",
-                onDismiss = { removeFrictionTarget = null },
-                onConfirmed = {
-                    onRemoveAppFriction(app.packageName, rule)
-                    removeFrictionTarget = null
+    pendingFriction?.let { pending ->
+        val confirm = {
+            pending.remove?.let { onRemoveAppFriction(pending.app.packageName, it) }
+            pending.add?.let { onAddAppFriction(pending.app.packageName, it) }
+            pendingFriction = null
+        }
+        when (pending) {
+            is PendingFriction.Strengthen -> AlertDialog(
+                onDismissRequest = { pendingFriction = null },
+                title = { Text("Apply friction?") },
+                text = { Text("Make ${pending.app.label} harder to open with this friction?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = confirm,
+                        modifier = Modifier.testTag("confirmAddFriction"),
+                    ) { Text("Apply") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingFriction = null }) { Text("Cancel") }
                 },
             )
+            is PendingFriction.Weaken -> key(pending) {
+                val replacement = pending.add
+                val (title, label) = when {
+                    replacement == null -> "Remove friction?" to "Remove"
+                    replacement.type == FrictionType.TIMED_WAIT -> "Shorten timed wait?" to "Shorten"
+                    else -> "Loosen daily limit?" to "Loosen"
+                }
+                UuidChallengeDialog(
+                    title = title,
+                    message = "This makes ${pending.app.label} easier to open. " +
+                        "Type the code below exactly to confirm.",
+                    confirmLabel = label,
+                    onDismiss = { pendingFriction = null },
+                    onConfirmed = confirm,
+                )
+            }
         }
     }
 }
@@ -289,12 +301,12 @@ private fun AppOptionsSheet(
     onDismiss: () -> Unit,
     onAddToAllowlist: () -> Unit,
     onRemoveFromAllowlist: () -> Unit,
-    onRequestAddFriction: (FrictionRule) -> Unit,
-    onRequestRemoveFriction: (FrictionRule) -> Unit,
+    onRequestChange: (PendingFriction) -> Unit,
 ) {
-    // Timed wait is a single grouped choice (at most one timer per app); the rest stack freely.
-    val timerDurations = listOf(10, 30, 60)
+    // Timed wait and daily limit are single grouped choices (at most one of each per
+    // app); the rest stack freely.
     val currentTimer = currentFrictions.firstOrNull { it.type == FrictionType.TIMED_WAIT }
+    val currentLimit = currentFrictions.firstOrNull { it.type.kind == FrictionKind.LIMIT }
     val stackableOptions = listOf(
         "Math problem" to FrictionRule(FrictionType.MATH, 1),
         "Reflection questions" to FrictionRule(FrictionType.REFLECTION, 3),
@@ -304,14 +316,15 @@ private fun AppOptionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp),
         ) {
             Text(text = app.label, style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
 
-            // The always-allowed core (phone/settings/messages/camera/maps) has no controls —
-            // it can't be removed from the allowlist or have friction added.
+            // The always-allowed core (phone/settings/messages/camera/maps/clock/contacts)
+            // has no controls — it can't be removed from the allowlist or have friction added.
             if (isLocked) {
                 Text(
                     text = "Always available. This core app can't be removed from the " +
@@ -342,23 +355,26 @@ private fun AppOptionsSheet(
             Text(text = "Add extra friction", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = "A token challenge already applies whenever this app isn't " +
-                    "allowlisted. Add more below to stack on top. Removing one requires a code.",
+                    "allowlisted. Add more below to stack on top. Removing or " +
+                    "weakening one requires a code.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
 
-            // ── Timed wait (grouped, single choice) ──
-            Text(text = "Timed wait", style = MaterialTheme.typography.titleSmall)
-            FrictionRadioRow(label = "Off", selected = currentTimer == null) {
-                currentTimer?.let(onRequestRemoveFriction)
-            }
-            timerDurations.forEach { seconds ->
-                val rule = FrictionRule(FrictionType.TIMED_WAIT, seconds)
-                FrictionRadioRow(label = "${seconds}s", selected = currentTimer == rule) {
-                    if (currentTimer != rule) onRequestAddFriction(rule)
-                }
-            }
+            TimedWaitSection(
+                app = app,
+                currentTimer = currentTimer,
+                onRequestChange = onRequestChange,
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            DailyLimitSection(
+                app = app,
+                currentLimit = currentLimit,
+                onRequestChange = onRequestChange,
+            )
 
             Spacer(Modifier.height(8.dp))
 
@@ -368,19 +384,93 @@ private fun AppOptionsSheet(
                 FrictionToggle(
                     label = label,
                     assigned = assigned,
-                    onToggle = { if (assigned) onRequestRemoveFriction(rule) else onRequestAddFriction(rule) },
+                    onToggle = {
+                        onRequestChange(
+                            if (assigned) PendingFriction.Weaken(app, remove = rule)
+                            else PendingFriction.Strengthen(app, remove = null, add = rule),
+                        )
+                    },
                 )
             }
         }
     }
 }
 
+/**
+ * The "Timed wait" radio group. At most one timer per app, and the section decides
+ * what each pick means: turning it Off or picking a shorter duration weakens
+ * friction (UUID gate); the first timer or a longer one strengthens it.
+ */
 @Composable
-private fun FrictionRadioRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+private fun TimedWaitSection(
+    app: AppEntry,
+    currentTimer: FrictionRule?,
+    onRequestChange: (PendingFriction) -> Unit,
+) {
+    val timerDurations = listOf(10, 30, 60)
+    Text(text = "Timed wait", style = MaterialTheme.typography.titleSmall)
+    FrictionRadioRow(label = "Off", selected = currentTimer == null, testTag = "timedWaitOff") {
+        currentTimer?.let { onRequestChange(PendingFriction.Weaken(app, remove = it)) }
+    }
+    timerDurations.forEach { seconds ->
+        val rule = FrictionRule(FrictionType.TIMED_WAIT, seconds)
+        FrictionRadioRow(label = "${seconds}s", selected = currentTimer == rule, testTag = "timedWait_$seconds") {
+            when {
+                currentTimer == rule -> {} // already selected — nothing to change
+                currentTimer != null && seconds < currentTimer.param ->
+                    onRequestChange(PendingFriction.Weaken(app, remove = currentTimer, add = rule))
+                else -> onRequestChange(PendingFriction.Strengthen(app, remove = currentTimer, add = rule))
+            }
+        }
+    }
+}
+
+/**
+ * The "Daily limit" radio group. At most one limit per app — minutes of use or opens
+ * per day — and the section decides what each pick means: the first limit or a
+ * stricter cap of the same kind strengthens friction (light confirm); turning it Off,
+ * loosening it, or switching kind (not comparable) weakens it (UUID gate).
+ */
+@Composable
+private fun DailyLimitSection(
+    app: AppEntry,
+    currentLimit: FrictionRule?,
+    onRequestChange: (PendingFriction) -> Unit,
+) {
+    val limitOptions = listOf(
+        "10 min a day" to FrictionRule(FrictionType.DAILY_MINUTES, 10),
+        "30 min a day" to FrictionRule(FrictionType.DAILY_MINUTES, 30),
+        "60 min a day" to FrictionRule(FrictionType.DAILY_MINUTES, 60),
+        "1 opens a day" to FrictionRule(FrictionType.DAILY_LAUNCHES, 1),
+        "2 opens a day" to FrictionRule(FrictionType.DAILY_LAUNCHES, 2),
+        "3 opens a day" to FrictionRule(FrictionType.DAILY_LAUNCHES, 3),
+    )
+    Text(text = "Daily limit", style = MaterialTheme.typography.titleSmall)
+    FrictionRadioRow(label = "Off", selected = currentLimit == null, testTag = "dailyLimitOff") {
+        currentLimit?.let { onRequestChange(PendingFriction.Weaken(app, remove = it)) }
+    }
+    limitOptions.forEach { (label, rule) ->
+        val tag = "dailyLimit_${rule.type.name}_${rule.param}"
+        FrictionRadioRow(label = label, selected = currentLimit == rule, testTag = tag) {
+            when {
+                currentLimit == rule -> {} // already selected — nothing to change
+                currentLimit == null ||
+                    (rule.type == currentLimit.type && rule.param < currentLimit.param) ->
+                    onRequestChange(PendingFriction.Strengthen(app, remove = currentLimit, add = rule))
+                else ->
+                    onRequestChange(PendingFriction.Weaken(app, remove = currentLimit, add = rule))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrictionRadioRow(label: String, selected: Boolean, testTag: String, onSelect: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(testTag)
             .clickable(onClick = onSelect)
             .padding(vertical = 4.dp),
     ) {

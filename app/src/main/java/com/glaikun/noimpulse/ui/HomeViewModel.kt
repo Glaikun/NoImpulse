@@ -75,6 +75,10 @@ class HomeViewModel @Inject constructor(
         val homeApps: List<AppEntry> = emptyList(),
         val appFriction: Map<String, List<FrictionRule>> = emptyMap(),
         val drawerLaunchesToday: Int = 0,
+        /** Today's drawer-launch count per package, for the daily-launches limit. */
+        val appLaunchesToday: Map<String, Int> = emptyMap(),
+        /** Today's foreground minutes per package, for the daily-minutes limit. */
+        val appUsageMinutesToday: Map<String, Int> = emptyMap(),
         val restrictedModeEnabled: Boolean = false,
         val allowedWindows: List<TimeWindow> = emptyList(),
         /** True when Restricted Mode is on and the current time is outside every allowed window. */
@@ -106,8 +110,8 @@ class HomeViewModel @Inject constructor(
     fun closeDrawer() = dispatch(AppEvent.CloseDrawer)
     fun openSettings() = dispatch(AppEvent.OpenSettings)
     fun closeSettings() = dispatch(AppEvent.CloseSettings)
-    fun requestRefriction(packageName: String) =
-        dispatch(AppEvent.RefrictionRequested(packageName))
+    fun requestRefriction(packageName: String, overLimit: FrictionRule? = null) =
+        dispatch(AppEvent.RefrictionRequested(packageName, overLimit))
     fun resolveRefriction() = dispatch(AppEvent.RefrictionResolved)
 
     /** Synchronous; must run before the target app is launched. */
@@ -164,6 +168,8 @@ class HomeViewModel @Inject constructor(
                 homeApps = homeApps,
                 appFriction = settingsSnap.appFriction,
                 drawerLaunchesToday = status.drawerLaunchesToday,
+                appLaunchesToday = status.appLaunchesToday,
+                appUsageMinutesToday = status.appUsageMinutes,
                 restrictedModeEnabled = settingsSnap.restrictedModeEnabled,
                 allowedWindows = settingsSnap.allowedWindows,
                 isRestrictedNow = isRestrictedNow(
@@ -203,8 +209,9 @@ class HomeViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     /**
-     * The always-allowed core (phone/settings/messages/camera/maps). Exposed for the UI so
-     * it can lock those rows; [lockedCache] mirrors the latest value for the mutation guards.
+     * The always-allowed core (phone/settings/messages/camera/maps/clock/contacts). Exposed
+     * for the UI so it can lock those rows; [lockedCache] mirrors the latest value for the
+     * mutation guards.
      */
     val lockedPackages: StateFlow<Set<String>> =
         statusRefresh
@@ -218,6 +225,7 @@ class HomeViewModel @Inject constructor(
     init {
         seedEssentialsIfFresh()
         ensureAlwaysAllowed()
+        seedAuthenticators()
     }
 
     /** The greyscale-rendered launcher icon for [packageName] (cached in the source). */
@@ -282,7 +290,22 @@ class HomeViewModel @Inject constructor(
             val allowed = settings.allowedPackages.first()
             if (packageName !in allowed) {
                 settings.recordDrawerLaunch()
+                settings.recordAppLaunch(packageName)
             }
+        }
+    }
+
+    /**
+     * Counts a passed re-friction gate toward the app's daily-opens cap, so returning
+     * via Recents can't sidestep a DAILY_LAUNCHES limit. Only the per-app counter moves:
+     * the global drawer counter stays a count of *drawer* launches (it sizes the token
+     * challenge and is displayed as such), while the per-app count backs the daily cap,
+     * which covers every gated open however it happened.
+     */
+    fun recordRefrictionPass(packageName: String) {
+        viewModelScope.launch {
+            val allowed = settings.allowedPackages.first()
+            if (packageName !in allowed) settings.recordAppLaunch(packageName)
         }
     }
 
@@ -293,15 +316,34 @@ class HomeViewModel @Inject constructor(
      * so users who turn an essential off won't have it silently re-added.
      */
     /**
-     * Guarantees the always-allowed core (phone/settings/messages/camera/maps) is on the
-     * allowlist. Idempotent and runs every start, so even if a previous version let one be
-     * removed, it's restored. Also primes [lockedCache] for the mutation guards.
+     * Guarantees the always-allowed core (phone/settings/messages/camera/maps/clock/contacts)
+     * is on the allowlist. Idempotent and runs every start, so even if a previous version let
+     * one be removed, it's restored. Also primes [lockedCache] for the mutation guards.
      */
     private fun ensureAlwaysAllowed() {
         viewModelScope.launch(ioDispatcher) {
             val locked = launcher.alwaysAllowedPackages()
             lockedCache = locked.toSet()
             locked.forEach { settings.setAppAllowed(it, true) }
+        }
+    }
+
+    /**
+     * Adds each installed known authenticator to the allowlist — once. Friction on a 2FA
+     * app can lock the user out of *other* accounts, so they start friction-free; but
+     * unlike the locked core, the user stays in control: the seeded marker means a
+     * deliberate removal is never undone, while an authenticator installed later still
+     * gets seeded when first seen.
+     */
+    private fun seedAuthenticators() {
+        viewModelScope.launch(ioDispatcher) {
+            val seeded = settings.seededAuthenticators.first()
+            launcher.installedAuthenticatorPackages()
+                .filter { it !in seeded }
+                .forEach { pkg ->
+                    settings.setAppAllowed(pkg, true)
+                    settings.markAuthenticatorSeeded(pkg)
+                }
         }
     }
 
@@ -356,26 +398,31 @@ class HomeViewModel @Inject constructor(
                         isDefaultHome = launcher.isDefaultHome(),
                         accessibilityGranted = accessibility.isFrictionWatchEnabled(),
                         usage = usageStats.queryToday(),
+                        appUsageMinutes = usageStats.foregroundMinutesToday(),
                     )
                 }
                 .flowOn(ioDispatcher),
             settings.drawerLaunchesToday,
-        ) { readings, drawerCount ->
+            settings.appLaunchesToday,
+        ) { readings, drawerCount, appLaunches ->
             StatusSnapshot(
                 usageGranted = readings.usageGranted,
                 isDefaultHome = readings.isDefaultHome,
                 accessibilityGranted = readings.accessibilityGranted,
                 usage = readings.usage,
                 drawerLaunchesToday = drawerCount,
+                appLaunchesToday = appLaunches,
+                appUsageMinutes = readings.appUsageMinutes,
             )
         }
 
-    /** Internal bundle so we can carry four fields out of a single IO read. */
+    /** Internal bundle so we can carry five fields out of a single IO read. */
     private data class StatusReadings(
         val usageGranted: Boolean,
         val isDefaultHome: Boolean,
         val accessibilityGranted: Boolean,
         val usage: com.glaikun.noimpulse.model.DailyUsage?,
+        val appUsageMinutes: Map<String, Int>,
     )
 
     private fun statusPollTicks(): Flow<Unit> = flow {
@@ -461,12 +508,14 @@ internal fun tokensRequired(drawerLaunchesToday: Int): Int =
 internal fun minuteOfDay(): Int = LocalTime.now().let { it.hour * 60 + it.minute }
 
 /**
- * Whether the user is currently in "restricted time": Restricted Mode is [enabled] and
- * [minuteOfDay] falls outside every allowed window. An enabled schedule with no windows is
- * always restricted — turning the mode on with nothing allowed locks everything by design.
+ * Whether the user is currently in "restricted time": Restricted Mode is [enabled], a
+ * schedule exists, and [minuteOfDay] falls outside every allowed window. An enabled mode
+ * with no windows enforces nothing — removing your last allowed time lifts the
+ * restriction rather than locking everything down.
  */
 internal fun isRestrictedNow(
     enabled: Boolean,
     allowedWindows: List<TimeWindow>,
     minuteOfDay: Int,
-): Boolean = enabled && allowedWindows.none { it.contains(minuteOfDay) }
+): Boolean = enabled && allowedWindows.isNotEmpty() &&
+    allowedWindows.none { it.contains(minuteOfDay) }

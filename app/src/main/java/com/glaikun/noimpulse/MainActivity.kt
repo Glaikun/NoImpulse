@@ -8,42 +8,16 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.glaikun.noimpulse.model.AppEntry
-import com.glaikun.noimpulse.model.ThemeMode
-import com.glaikun.noimpulse.ui.drawer.AppDrawerScreen
-import com.glaikun.noimpulse.ui.AppScreen
-import com.glaikun.noimpulse.ui.FrictionGate
-import com.glaikun.noimpulse.ui.RestrictedTimeDialog
-import com.glaikun.noimpulse.ui.screens.HomeScreen
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import com.glaikun.noimpulse.ui.HomeViewModel
-import com.glaikun.noimpulse.ui.screens.IntroScreen
-import com.glaikun.noimpulse.ui.screens.SettingsScreen
-import com.glaikun.noimpulse.ui.screens.SetupScreen
-import com.glaikun.noimpulse.ui.theme.NoImpulseTheme
-import com.glaikun.noimpulse.ui.tokensRequired
+import com.glaikun.noimpulse.ui.NoImpulseContent
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -61,139 +35,18 @@ class MainActivity : ComponentActivity() {
         consumeRefrictionExtra(intent)
 
         setContent {
-            val state by vm.state.collectAsStateWithLifecycle()
-            val darkTheme = when (state.themeMode) {
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
-            }
+            val roleLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult(),
+            ) { vm.refreshStatus() }
 
-            NoImpulseTheme(darkTheme = darkTheme, textScale = state.textSize.scale) {
-                // Re-read usage access / default-home / accessibility status whenever we come back.
-                LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshStatus() }
-
-                val screen by vm.screen.collectAsStateWithLifecycle()
-                val installedApps by vm.installedApps.collectAsStateWithLifecycle()
-
-                val roleLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult(),
-                ) { vm.refreshStatus() }
-
-                // Shown when a non-allowlisted app launch is attempted during restricted time.
-                // Single chokepoint so every launch path (home, drawer, re-friction) is covered;
-                // allowlisted apps (including the always-allowed core) stay reachable off-hours.
-                var restrictedNotice by remember { mutableStateOf(false) }
-                val attemptLaunch: (String) -> Unit = { pkg ->
-                    val current = vm.state.value
-                    val isAllowed = current.allowedApps.any { it.packageName == pkg }
-                    if (current.isRestrictedNow && !isAllowed) restrictedNotice = true else launchApp(pkg)
-                }
-
-                when (val s = screen) {
-                    AppScreen.Loading -> LoadingScreen()
-
-                    AppScreen.Intro -> IntroScreen(onContinue = vm::completeIntro)
-
-                    AppScreen.Setup -> SetupScreen(
-                        state = state,
-                        installedApps = installedApps,
-                        onGrantUsageAccess = ::openUsageAccessSettings,
-                        onSetDefaultHome = { requestDefaultHome(roleLauncher) },
-                        onGrantAccessibility = ::openAccessibilitySettings,
-                        onToggleApp = vm::setAppAllowed,
-                        onFinish = vm::completeSetup,
-                    )
-
-                    AppScreen.Home -> HomeScreen(
-                        state = state,
-                        onGrantUsageAccess = ::openUsageAccessSettings,
-                        onLaunchApp = attemptLaunch,
-                        onOpenDrawer = vm::openDrawer,
-                        loadIcon = vm::loadIcon,
-                    )
-
-                    AppScreen.Settings -> {
-                        BackHandler { vm.closeSettings() }
-                        SettingsScreen(
-                            state = state,
-                            onGrantUsageAccess = ::openUsageAccessSettings,
-                            onSetDefaultHome = { requestDefaultHome(roleLauncher) },
-                            onGrantAccessibility = ::openAccessibilitySettings,
-                            onSwitchLauncher = { requestDefaultHome(roleLauncher) },
-                            onSetRestrictedModeEnabled = vm::setRestrictedModeEnabled,
-                            onAddAllowedWindow = vm::addAllowedWindow,
-                            onRemoveAllowedWindow = vm::removeAllowedWindow,
-                            onSetThemeMode = vm::setThemeMode,
-                            onSetTextSize = vm::setTextSize,
-                        )
-                    }
-
-                    AppScreen.Drawer -> {
-                        BackHandler { vm.closeDrawer() }
-                        val lockedPackages by vm.lockedPackages.collectAsStateWithLifecycle()
-                        AppDrawerScreen(
-                            installedApps = installedApps,
-                            allowedPackages = state.allowedApps.mapTo(HashSet()) { it.packageName },
-                            lockedPackages = lockedPackages,
-                            drawerLaunchesToday = state.drawerLaunchesToday,
-                            isRestrictedNow = state.isRestrictedNow,
-                            onLaunchApp = { pkg ->
-                                vm.closeDrawer()
-                                attemptLaunch(pkg)
-                            },
-                            onLaunchAfterChallenge = { pkg ->
-                                // ORDER MATTERS: mark the ledger before launching so the
-                                // foreground-change event the watcher sees next is for an
-                                // already-in-session package.
-                                vm.markFrictionPassed(pkg)
-                                vm.recordDrawerLaunch(pkg)
-                                vm.closeDrawer()
-                                attemptLaunch(pkg)
-                            },
-                            onRestrictedTap = { restrictedNotice = true },
-                            loadIcon = vm::loadIcon,
-                            onSetAppAllowed = vm::setAppAllowed,
-                            appFriction = state.appFriction,
-                            onAddAppFriction = vm::addAppFriction,
-                            onRemoveAppFriction = vm::removeAppFriction,
-                            onOpenSettings = vm::openSettings,
-                        )
-                    }
-
-                    is AppScreen.Refriction -> {
-                        // Re-friction launched by FrictionWatchService when the user
-                        // returned to a friction-locked app via Recents. We render the
-                        // gate over our own launcher chrome; the target app keeps its
-                        // in-memory state behind us.
-                        val pkg = s.packageName
-                        val app = installedApps.firstOrNull { it.packageName == pkg }
-                            ?: AppEntry(pkg, pkg)
-                        BackHandler { vm.resolveRefriction() }
-                        if (state.isRestrictedNow) {
-                            // Restricted time: there's no gate to pass — just show the notice
-                            // and send the user back to the launcher home.
-                            RestrictedTimeDialog(onDismiss = vm::resolveRefriction)
-                        } else {
-                            FrictionGate(
-                                app = app,
-                                rules = state.appFriction[pkg].orEmpty(),
-                                drawerLaunchesToday = state.drawerLaunchesToday,
-                                tokenCount = tokensRequired(state.drawerLaunchesToday),
-                                onCancel = vm::resolveRefriction,
-                                onComplete = {
-                                    vm.markFrictionPassed(pkg)
-                                    launchApp(pkg)
-                                    vm.resolveRefriction()
-                                },
-                            )
-                        }
-                    }
-                }
-
-                if (restrictedNotice) {
-                    RestrictedTimeDialog(onDismiss = { restrictedNotice = false })
-                }
-            }
+            NoImpulseContent(
+                vm = vm,
+                onGrantUsageAccess = ::openUsageAccessSettings,
+                onSetDefaultHome = { requestDefaultHome(roleLauncher) },
+                onGrantAccessibility = ::openAccessibilitySettings,
+                onSwitchLauncher = { requestDefaultHome(roleLauncher) },
+                onLaunchApp = ::launchApp,
+            )
         }
     }
 
@@ -204,12 +57,24 @@ class MainActivity : ComponentActivity() {
         consumeRefrictionExtra(intent)
     }
 
-    /** Reads the re-friction extra and forwards it to the FSM if present. */
+    /** Reads the re-friction extras and forwards them to the FSM if present. */
     private fun consumeRefrictionExtra(intent: Intent?) {
         val pkg = intent?.getStringExtra(EXTRA_REFRICTION_PACKAGE) ?: return
         intent.removeExtra(EXTRA_REFRICTION_PACKAGE)
+        val overLimit = readLimitExtras(intent)
         Log.d(TAG, "Re-friction requested for $pkg")
-        vm.requestRefriction(pkg)
+        vm.requestRefriction(pkg, overLimit)
+    }
+
+    /** The exceeded daily limit the watcher attached, or null when absent/malformed. */
+    private fun readLimitExtras(intent: Intent): FrictionRule? {
+        val typeName = intent.getStringExtra(EXTRA_REFRICTION_LIMIT_TYPE) ?: return null
+        val param = intent.getIntExtra(EXTRA_REFRICTION_LIMIT_PARAM, -1)
+        intent.removeExtra(EXTRA_REFRICTION_LIMIT_TYPE)
+        intent.removeExtra(EXTRA_REFRICTION_LIMIT_PARAM)
+        if (param < 0) return null
+        val type = runCatching { FrictionType.valueOf(typeName) }.getOrNull() ?: return null
+        return FrictionRule(type, param)
     }
 
     /** Opens the system Usage Access screen so the user can grant PACKAGE_USAGE_STATS. */
@@ -253,17 +118,11 @@ class MainActivity : ComponentActivity() {
         /** Intent extra used by [com.glaikun.noimpulse.services.FrictionWatchService] to
          *  request that the gate be re-shown for the named package. */
         const val EXTRA_REFRICTION_PACKAGE = "com.glaikun.noimpulse.REFRICTION_PACKAGE"
-    }
-}
 
-@Composable
-private fun LoadingScreen() {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
+        /** Optional companions to [EXTRA_REFRICTION_PACKAGE]: the daily limit the package
+         *  has exceeded ([com.glaikun.noimpulse.model.FrictionType] name + its param), so
+         *  the block notice shows without waiting for a fresh usage read. */
+        const val EXTRA_REFRICTION_LIMIT_TYPE = "com.glaikun.noimpulse.REFRICTION_LIMIT_TYPE"
+        const val EXTRA_REFRICTION_LIMIT_PARAM = "com.glaikun.noimpulse.REFRICTION_LIMIT_PARAM"
     }
 }

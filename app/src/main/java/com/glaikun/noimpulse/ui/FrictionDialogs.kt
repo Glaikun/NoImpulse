@@ -26,6 +26,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.glaikun.noimpulse.model.AppEntry
+import com.glaikun.noimpulse.model.FrictionRule
+import com.glaikun.noimpulse.model.FrictionType
 import kotlinx.coroutines.delay
 import java.util.UUID
 
@@ -261,6 +263,41 @@ internal fun RestrictedTimeDialog(onDismiss: () -> Unit) {
             TextButton(
                 onClick = onDismiss,
                 modifier = Modifier.testTag("restrictedTimeOk"),
+            ) { Text("OK") }
+        },
+    )
+}
+
+// ── Daily limit ──────────────────────────────────────────────────────────────
+
+/** Human-readable form of a daily limit, e.g. "30 min a day" or "5 opens a day". */
+internal fun dailyLimitLabel(rule: FrictionRule): String = when (rule.type) {
+    FrictionType.DAILY_MINUTES -> "${rule.param} min a day"
+    FrictionType.DAILY_LAUNCHES -> "${rule.param} opens a day"
+    else -> ""
+}
+
+/**
+ * Shown when the user tries to open an app that has exceeded its daily limit. There's
+ * no way through — the block lifts when the day rolls over at midnight.
+ */
+@Composable
+internal fun DailyLimitDialog(app: AppEntry, rule: FrictionRule, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Daily limit reached") },
+        text = {
+            Text(
+                text = "You've hit your ${dailyLimitLabel(rule)} limit for ${app.label}. " +
+                    "It resets at midnight.",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag("dailyLimitNotice"),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("dailyLimitOk"),
             ) { Text("OK") }
         },
     )

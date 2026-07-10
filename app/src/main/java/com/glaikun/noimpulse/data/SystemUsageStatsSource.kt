@@ -8,13 +8,20 @@ import android.os.Build
 import android.os.Process
 import com.glaikun.noimpulse.model.DailyUsage
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.time.Clock
 import java.time.LocalDate
-import java.time.ZoneId
 import javax.inject.Inject
 
-class SystemUsageStatsSource @Inject constructor(
-    @ApplicationContext private val context: Context,
+class SystemUsageStatsSource(
+    private val context: Context,
+    private val clock: Clock,
 ) : UsageStatsSource {
+
+    /** Production entry point: Hilt supplies the context and the real clock rides
+     *  along. Tests use the primary constructor with a fixed clock so the "today"
+     *  window doesn't depend on when the test happens to run (midnight flakiness). */
+    @Inject constructor(@ApplicationContext context: Context) :
+        this(context, Clock.systemDefaultZone())
 
     // AppOps is the standard way to check Usage Access; the APIs are flagged
     // deprecated but have no public replacement for this purpose.
@@ -41,11 +48,7 @@ class SystemUsageStatsSource @Inject constructor(
         if (!hasUsageAccess()) return null
 
         val mgr = context.getSystemService(UsageStatsManager::class.java)
-        val startOfDay = LocalDate.now()
-            .atStartOfDay(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-        val usageEvents = mgr.queryEvents(startOfDay, System.currentTimeMillis())
+        val usageEvents = mgr.queryEvents(startOfDayMillis(), clock.millis())
 
         var unlocks = 0
         var screenOnMs = 0L
@@ -69,7 +72,7 @@ class SystemUsageStatsSource @Inject constructor(
         }
         // If the screen is still on, count time until now.
         if (lastInteractiveMs != -1L) {
-            screenOnMs += System.currentTimeMillis() - lastInteractiveMs
+            screenOnMs += clock.millis() - lastInteractiveMs
         }
 
         return DailyUsage(
@@ -78,11 +81,45 @@ class SystemUsageStatsSource @Inject constructor(
         )
     }
 
+    // Known undercount: an app already in the foreground at midnight has no
+    // MOVE_TO_FOREGROUND event inside today's window, so its stretch from midnight to
+    // the first MOVE_TO_BACKGROUND is dropped (the unmatched background event is skipped
+    // below). Errs lenient — never blocks on time it can't attribute — so it's accepted.
+    @Suppress("DEPRECATION") // MOVE_TO_FOREGROUND/BACKGROUND: the minSdk-26 event pair.
+    override fun foregroundMinutesToday(): Map<String, Int> {
+        if (!hasUsageAccess()) return emptyMap()
+
+        val mgr = context.getSystemService(UsageStatsManager::class.java)
+        val usageEvents = mgr.queryEvents(startOfDayMillis(), clock.millis())
+
+        val foregroundMs = HashMap<String, Long>()
+        val foregroundSince = HashMap<String, Long>()
+
+        val event = UsageEvents.Event()
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val pkg = event.packageName ?: continue
+            when (event.eventType) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> foregroundSince[pkg] = event.timeStamp
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    foregroundSince.remove(pkg)?.let { since ->
+                        foregroundMs.merge(pkg, event.timeStamp - since, Long::plus)
+                    }
+                }
+            }
+        }
+        // Apps still in the foreground count up to now.
+        val now = clock.millis()
+        foregroundSince.forEach { (pkg, since) -> foregroundMs.merge(pkg, now - since, Long::plus) }
+
+        return foregroundMs.mapValues { (_, ms) -> (ms / 60_000).toInt() }
+    }
+
     override fun recentlyUsedPackages(): List<String> {
         if (!hasUsageAccess()) return emptyList()
 
         val mgr = context.getSystemService(UsageStatsManager::class.java)
-        val end = System.currentTimeMillis()
+        val end = clock.millis()
         val start = end - RECENT_WINDOW_MS
         val stats = mgr.queryUsageStats(UsageStatsManager.INTERVAL_BEST, start, end)
             ?: return emptyList()
@@ -94,6 +131,12 @@ class SystemUsageStatsSource @Inject constructor(
             .sortedByDescending { it.value }
             .map { it.key }
     }
+
+    /** Midnight today in epoch millis — the lower bound of every "today" query. */
+    private fun startOfDayMillis(): Long = LocalDate.now(clock)
+        .atStartOfDay(clock.zone)
+        .toInstant()
+        .toEpochMilli()
 
     private companion object {
         const val RECENT_WINDOW_MS = 30L * 24 * 60 * 60 * 1000   // 30 days
