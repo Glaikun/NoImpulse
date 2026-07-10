@@ -14,8 +14,8 @@ android {
         applicationId = "com.glaikun.noimpulse"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "1.0.0"
 
         // Swaps in HiltTestApplication so app/src/androidTest can launch @AndroidEntryPoint
         // activities under Hilt (see HiltTestRunner.kt).
