@@ -81,6 +81,10 @@ class SystemUsageStatsSource(
         )
     }
 
+    // Known undercount: an app already in the foreground at midnight has no
+    // MOVE_TO_FOREGROUND event inside today's window, so its stretch from midnight to
+    // the first MOVE_TO_BACKGROUND is dropped (the unmatched background event is skipped
+    // below). Errs lenient — never blocks on time it can't attribute — so it's accepted.
     @Suppress("DEPRECATION") // MOVE_TO_FOREGROUND/BACKGROUND: the minSdk-26 event pair.
     override fun foregroundMinutesToday(): Map<String, Int> {
         if (!hasUsageAccess()) return emptyMap()

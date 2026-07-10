@@ -9,7 +9,7 @@ data class StatusSnapshot(
     val usage: DailyUsage?,
     /** Non-allowlisted apps launched via the drawer today. Persisted, no permission needed. */
     val drawerLaunchesToday: Int,
-    /** Today's drawer-launch count per package. Persisted, no permission needed. */
+    /** Today's gated-open count per package (drawer + re-friction). Persisted, no permission needed. */
     val appLaunchesToday: Map<String, Int> = emptyMap(),
     /** Today's foreground minutes per package — empty without usage access. */
     val appUsageMinutes: Map<String, Int> = emptyMap(),

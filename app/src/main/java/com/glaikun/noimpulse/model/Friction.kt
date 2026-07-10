@@ -24,6 +24,6 @@ enum class FrictionType(val kind: FrictionKind) {
  * - [FrictionType.MATH] — number of problems to solve
  * - [FrictionType.REFLECTION] — number of reflection questions to answer
  * - [FrictionType.DAILY_MINUTES] — max foreground minutes per day
- * - [FrictionType.DAILY_LAUNCHES] — max drawer launches per day
+ * - [FrictionType.DAILY_LAUNCHES] — max gated opens per day (drawer launches and passed re-friction gates)
  */
 data class FrictionRule(val type: FrictionType, val param: Int)

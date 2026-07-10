@@ -557,6 +557,30 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `recordRefrictionPass bumps the per-app count but not the drawer counter`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true)
+        val vm = homeViewModel(null, settings = settings)
+
+        vm.recordRefrictionPass("com.twitter")
+        runCurrent()
+
+        // Counts toward the daily-launches cap, but re-friction is not a drawer launch.
+        assertEquals(mapOf("com.twitter" to 1), vm.state.value.appLaunchesToday)
+        assertEquals(0, vm.state.value.drawerLaunchesToday)
+    }
+
+    @Test
+    fun `recordRefrictionPass does NOT count an allowlisted package`() = runTest {
+        val settings = FakeSettingsRepository(setupComplete = true, allowed = setOf("com.twitter"))
+        val vm = homeViewModel(null, settings = settings)
+
+        vm.recordRefrictionPass("com.twitter")
+        runCurrent()
+
+        assertTrue(vm.state.value.appLaunchesToday.isEmpty())
+    }
+
+    @Test
     fun `state time is populated after first tick`() = runTest {
         val vm = homeViewModel(null)
         assertTrue(vm.state.value.time.isNotBlank())

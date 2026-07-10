@@ -28,9 +28,10 @@ interface SettingsRepository {
     val drawerLaunchesToday: Flow<Int>
 
     /**
-     * Today's drawer-launch count per package, for the daily-launches limit friction.
-     * Emits an empty map when the persisted date is stale — the next [recordAppLaunch]
-     * will atomically reset and record today's first launch.
+     * Today's gated-open count per package (drawer launches plus passed re-friction
+     * gates), for the daily-launches limit friction. Emits an empty map when the
+     * persisted date is stale — the next [recordAppLaunch] will atomically reset and
+     * record today's first launch.
      */
     val appLaunchesToday: Flow<Map<String, Int>>
 

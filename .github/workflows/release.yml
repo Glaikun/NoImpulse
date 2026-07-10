@@ -66,29 +66,40 @@ jobs:
           set -euo pipefail
           GRADLE_FILE=app/build.gradle.kts
 
-          current_name=$(sed -nE 's/.*versionName *= *"([^"]+)".*/\1/p' "$GRADLE_FILE")
-          current_code=$(sed -nE 's/.*versionCode *= *([0-9]+).*/\1/p' "$GRADLE_FILE")
-
-          IFS='.' read -r major minor patch <<< "$current_name" || true
-          major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
-
-          case "$RELEASE_TYPE" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-
-          new_name="$major.$minor.$patch"
-          new_code=$((current_code + 1))
-
           git config user.name "noimpulse-release-bot"
           git config user.email "noimpulse-release-bot@users.noreply.github.com"
 
-          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$new_name\"/" "$GRADLE_FILE"
-          sed -i -E "s/versionCode = [0-9]+/versionCode = $new_code/" "$GRADLE_FILE"
-          git add "$GRADLE_FILE"
-          git commit -m "Release $new_name"
-          git push origin develop
+          current_name=$(sed -nE 's/.*versionName *= *"([^"]+)".*/\1/p' "$GRADLE_FILE")
+          current_code=$(sed -nE 's/.*versionCode *= *([0-9]+).*/\1/p' "$GRADLE_FILE")
+
+          # Resume guard: if a previous run bumped develop ("Release X.Y.Z" is already
+          # HEAD) but failed before tagging/publishing, release that version as-is
+          # instead of bumping again — a plain re-run must not double-bump.
+          head_msg=$(git log -1 --pretty=%s)
+          if [ "$head_msg" = "Release $current_name" ] && \
+             ! git ls-remote --exit-code --tags origin "v$current_name" > /dev/null 2>&1; then
+            echo "Resuming unpublished release $current_name — skipping the version bump."
+            new_name=$current_name
+            new_code=$current_code
+          else
+            IFS='.' read -r major minor patch <<< "$current_name" || true
+            major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
+
+            case "$RELEASE_TYPE" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+            esac
+
+            new_name="$major.$minor.$patch"
+            new_code=$((current_code + 1))
+
+            sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$new_name\"/" "$GRADLE_FILE"
+            sed -i -E "s/versionCode = [0-9]+/versionCode = $new_code/" "$GRADLE_FILE"
+            git add "$GRADLE_FILE"
+            git commit -m "Release $new_name"
+            git push origin develop
+          fi
 
           echo "Releasing $new_name (code $new_code)"
           echo "name=$new_name" >> "$GITHUB_OUTPUT"

@@ -12,14 +12,26 @@ import com.glaikun.noimpulse.model.FrictionType
 import com.glaikun.noimpulse.model.TextSize
 import com.glaikun.noimpulse.model.ThemeMode
 import com.glaikun.noimpulse.model.TimeWindow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import java.time.Clock
+import java.time.Duration
 import java.time.LocalDate
 import javax.inject.Inject
 
-class DataStoreSettingsRepository @Inject constructor(
+class DataStoreSettingsRepository(
     private val dataStore: DataStore<Preferences>,
+    private val clock: Clock,
 ) : SettingsRepository {
+
+    /** Production entry point: Hilt supplies the DataStore and the real clock rides
+     *  along. Tests use the primary constructor with a controllable clock so the
+     *  day-keyed counters can be exercised across a midnight boundary. */
+    @Inject constructor(dataStore: DataStore<Preferences>) :
+        this(dataStore, Clock.systemDefaultZone())
 
     override val introSeen: Flow<Boolean> =
         dataStore.data.map { it[Keys.INTRO_SEEN] ?: false }
@@ -61,9 +73,13 @@ class DataStoreSettingsRepository @Inject constructor(
             } ?: TextSize.DEFAULT
         }
 
+    // The day-keyed flows combine with midnightTicks() because their `map` bodies only
+    // re-run when DataStore emits (i.e. on a write). Without the tick, a device idling
+    // across midnight keeps serving yesterday's counts — a limit-blocked app would stay
+    // blocked past the "resets at midnight" promise until some unrelated settings write.
     override val drawerLaunchesToday: Flow<Int> =
-        dataStore.data.map { prefs ->
-            val today = LocalDate.now().toString()
+        combine(dataStore.data, midnightTicks()) { prefs, _ ->
+            val today = LocalDate.now(clock).toString()
             if (prefs[Keys.DRAWER_COUNTER_DATE] == today) {
                 prefs[Keys.DRAWER_LAUNCHES_TODAY] ?: 0
             } else {
@@ -72,8 +88,8 @@ class DataStoreSettingsRepository @Inject constructor(
         }
 
     override val appLaunchesToday: Flow<Map<String, Int>> =
-        dataStore.data.map { prefs ->
-            val today = LocalDate.now().toString()
+        combine(dataStore.data, midnightTicks()) { prefs, _ ->
+            val today = LocalDate.now(clock).toString()
             if (prefs[Keys.APP_LAUNCHES_DATE] == today) {
                 (prefs[Keys.APP_LAUNCHES_TODAY] ?: emptySet())
                     .mapNotNull(::decodeLaunchCount)
@@ -82,6 +98,14 @@ class DataStoreSettingsRepository @Inject constructor(
                 emptyMap()
             }
         }
+
+    /** Emits immediately, then once shortly after each local midnight. */
+    private fun midnightTicks(): Flow<Unit> = flow {
+        while (true) {
+            emit(Unit)
+            delay(millisUntilNextMidnight(clock))
+        }
+    }
 
     override suspend fun setIntroSeen(seen: Boolean) {
         dataStore.edit { it[Keys.INTRO_SEEN] = seen }
@@ -114,7 +138,7 @@ class DataStoreSettingsRepository @Inject constructor(
     }
 
     override suspend fun recordDrawerLaunch() {
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(clock).toString()
         dataStore.edit { prefs ->
             val sameDay = prefs[Keys.DRAWER_COUNTER_DATE] == today
             val current = if (sameDay) prefs[Keys.DRAWER_LAUNCHES_TODAY] ?: 0 else 0
@@ -124,7 +148,7 @@ class DataStoreSettingsRepository @Inject constructor(
     }
 
     override suspend fun recordAppLaunch(packageName: String) {
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(clock).toString()
         dataStore.edit { prefs ->
             val sameDay = prefs[Keys.APP_LAUNCHES_DATE] == today
             val counts = if (sameDay) {
@@ -181,6 +205,16 @@ class DataStoreSettingsRepository @Inject constructor(
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val TEXT_SIZE = stringPreferencesKey("text_size")
     }
+}
+
+/**
+ * Milliseconds from the clock's now until the next local midnight. Always positive:
+ * the next midnight is strictly after now, and `atStartOfDay(zone)` resolves DST gaps
+ * to the first valid instant of the day.
+ */
+internal fun millisUntilNextMidnight(clock: Clock): Long {
+    val nextMidnight = LocalDate.now(clock).plusDays(1).atStartOfDay(clock.zone).toInstant()
+    return Duration.between(clock.instant(), nextMidnight).toMillis()
 }
 
 /** Encodes a rule as "package|TYPE|param". Package names never contain '|'. */

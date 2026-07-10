@@ -294,6 +294,20 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Counts a passed re-friction gate toward the app's daily-opens cap, so returning
+     * via Recents can't sidestep a DAILY_LAUNCHES limit. Only the per-app counter moves:
+     * the global drawer counter stays a count of *drawer* launches (it sizes the token
+     * challenge and is displayed as such), while the per-app count backs the daily cap,
+     * which covers every gated open however it happened.
+     */
+    fun recordRefrictionPass(packageName: String) {
+        viewModelScope.launch {
+            val allowed = settings.allowedPackages.first()
+            if (packageName !in allowed) settings.recordAppLaunch(packageName)
+        }
+    }
+
+    /**
      * On first launch (setup incomplete and the allowlist still empty) pre-allow the
      * device's default settings/dialer/SMS/maps/clock so the home screen has something
      * usable out of the box. Idempotent — once the allowlist is non-empty it no-ops,

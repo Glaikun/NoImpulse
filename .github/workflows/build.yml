@@ -32,6 +32,11 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
 
+      # Instrumentation tests need a device, so CI can't run them — but it must at least
+      # keep them compiling (they're part of the local acceptance gate in CLAUDE.md).
+      - name: Compile instrumentation sources
+        run: ./gradlew compileDebugAndroidTestKotlin
+
       - name: Assemble debug APK
         run: ./gradlew assembleDebug
 

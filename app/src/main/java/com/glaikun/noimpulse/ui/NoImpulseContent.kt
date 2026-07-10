@@ -174,6 +174,9 @@ fun NoImpulseContent(
                         onCancel = vm::resolveRefriction,
                         onComplete = {
                             vm.markFrictionPassed(pkg)
+                            // A passed re-friction gate is still an "open" — count it so
+                            // Recents round-trips can't sidestep a daily-launches limit.
+                            vm.recordRefrictionPass(pkg)
                             onLaunchApp(pkg)
                             vm.resolveRefriction()
                         },

@@ -72,6 +72,9 @@ class RefrictionIntegrationTest {
 
         assertEquals(twitter.packageName, launched)
         assertEquals(AppScreen.Home, vm.screen.value)
+        // The pass counts toward the daily-launches cap — a Recents round-trip must
+        // not be a free open.
+        assertEquals(mapOf(twitter.packageName to 1), vm.state.value.appLaunchesToday)
     }
 
     @Test

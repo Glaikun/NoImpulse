@@ -1,5 +1,3 @@
-import org.jetbrains.kotlin.codegen.optimization.common.analyze
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
