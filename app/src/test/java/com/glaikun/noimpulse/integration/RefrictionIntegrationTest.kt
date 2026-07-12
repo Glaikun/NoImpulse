@@ -20,6 +20,7 @@ import com.glaikun.noimpulse.testing.realHomeViewModel
 import com.glaikun.noimpulse.testing.settle
 import com.glaikun.noimpulse.ui.AppScreen
 import com.glaikun.noimpulse.ui.NoImpulseContent
+import com.glaikun.noimpulse.ui.exceededDailyLimit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -38,7 +39,9 @@ private const val OWN_PACKAGE = "com.glaikun.noimpulse"
  * extras — by calling [com.glaikun.noimpulse.ui.HomeViewModel.requestRefriction]
  * directly, and confirms [NoImpulseContent] renders the right overlay for each of its
  * three outcomes, plus the session lifecycle across a screen-off/on cycle that decides
- * whether re-friction fires at all.
+ * whether re-friction fires at all, plus the `inSession` guard on
+ * [com.glaikun.noimpulse.ui.exceededDailyLimit] that stops a DAILY_LAUNCHES verdict from
+ * being re-raised against a session that already paid for its own open.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [26], qualifiers = "w360dp-h640dp")
@@ -207,5 +210,67 @@ class RefrictionIntegrationTest {
 
         assertEquals(twitter.packageName, launched)
         assertEquals(AppScreen.Home, vm.screen.value)
+    }
+
+    @Test
+    fun `hitting the launches cap does not block the rest of that same session, but the next session is blocked`() {
+        // Twitter just used its one permitted open today, and the user is currently
+        // still inside it (ledger has it in session) — the exact state a passed gate
+        // leaves behind. This is also exactly the moment the bug reproduced on-device:
+        // FrictionWatchService.evaluateLimits re-runs on the app's own transition into
+        // foreground (and again on any internal navigation after that), and without an
+        // inSession guard it found the count already at the cap — the same increment
+        // this very open just made — and immediately bounced the user back out.
+        val twitter = AppEntry("Twitter", "com.twitter.android")
+        val rules = listOf(FrictionRule(FrictionType.DAILY_LAUNCHES, 1))
+        var launched: String? = null
+        val ledger = FrictionSessionLedger().apply { markPassed(twitter.packageName) }
+        val vm = realHomeViewModel(
+            usage = null,
+            launcher = FakeLauncherAppsSource(installed = listOf(twitter)),
+            settings = FakeSettingsRepository(
+                setupComplete = true,
+                appFriction = mapOf(twitter.packageName to rules),
+                appLaunches = mapOf(twitter.packageName to 1),
+            ),
+            ledger = ledger,
+        )
+
+        composeRule.setContent { NoImpulseContent(vm = vm, onLaunchApp = { launched = it }) }
+        composeRule.mainClock.autoAdvance = false
+        composeRule.settle()
+
+        // FrictionWatchService.evaluateLimits would compute this exact verdict for the
+        // app's own foreground transition, or any internal navigation, or a Recents
+        // round-trip — all while still the same in-session pass.
+        val midSessionVerdict = exceededDailyLimit(
+            rules = rules,
+            launchesToday = vm.state.value.appLaunchesToday[twitter.packageName] ?: 0,
+            minutesToday = 0,
+            inSession = ledger.isInSession(twitter.packageName),
+        )
+        // No verdict, so evaluateLimits never calls startRefriction — nothing reaches the UI.
+        assertNull(midSessionVerdict)
+        assertEquals(AppScreen.Home, vm.screen.value)
+
+        // Sleeping the phone (ACTION_SCREEN_OFF) clears the ledger — the next pickup is
+        // a new session, and the cap applies again.
+        ledger.clearAll()
+        val nextSessionVerdict = exceededDailyLimit(
+            rules = rules,
+            launchesToday = vm.state.value.appLaunchesToday[twitter.packageName] ?: 0,
+            minutesToday = 0,
+            inSession = ledger.isInSession(twitter.packageName),
+        )
+        assertEquals(FrictionRule(FrictionType.DAILY_LAUNCHES, 1), nextSessionVerdict)
+
+        vm.requestRefriction(twitter.packageName, nextSessionVerdict)
+        composeRule.settle()
+
+        assertTrue(composeRule.onAllNodesWithTag("dailyLimitNotice").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(composeRule.onAllNodesWithTag("challengeInput").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("dailyLimitOk").performClick()
+        composeRule.settle()
+        assertNull(launched)
     }
 }
