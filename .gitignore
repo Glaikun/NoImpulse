@@ -18,3 +18,12 @@ local.properties
 /.claude
 /agent
 .agents
+
+# Secret/key material. Release signing already happens in CI via secrets + a transient
+# keystore file that's deleted right after use (see release.yml), so nothing tracked
+# should ever match these — this is just a safety net against an accidental future commit.
+*.jks
+*.keystore
+*.p12
+*.pem
+.env

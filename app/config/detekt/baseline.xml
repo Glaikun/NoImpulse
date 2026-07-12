@@ -1,0 +1,120 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:AppDrawerScreen.kt$@Composable fun AppDrawerScreen( installedApps: List&lt;AppEntry&gt;, allowedPackages: Set&lt;String&gt;, lockedPackages: Set&lt;String&gt; = emptySet(), drawerLaunchesToday: Int, isRestrictedNow: Boolean = false, onLaunchApp: (String) -&gt; Unit = {}, onLaunchAfterChallenge: (String) -&gt; Unit = {}, onRestrictedTap: () -&gt; Unit = {}, loadIcon: (String) -&gt; Drawable? = { null }, appFriction: Map&lt;String, List&lt;FrictionRule&gt;&gt; = emptyMap(), appLaunchesToday: Map&lt;String, Int&gt; = emptyMap(), appUsageMinutesToday: Map&lt;String, Int&gt; = emptyMap(), onSetAppAllowed: (String, Boolean) -&gt; Unit = { _, _ -&gt; }, onAddAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onRemoveAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onOpenSettings: () -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:AppScreen.kt$fun nextScreen(current: AppScreen, event: AppEvent): AppScreen</ID>
+    <ID>CyclomaticComplexMethod:NoImpulseContent.kt$@Composable fun NoImpulseContent( vm: HomeViewModel, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onSwitchLauncher: () -&gt; Unit = {}, onLaunchApp: (String) -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@Composable fun AppDrawerScreen( installedApps: List&lt;AppEntry&gt;, allowedPackages: Set&lt;String&gt;, lockedPackages: Set&lt;String&gt; = emptySet(), drawerLaunchesToday: Int, isRestrictedNow: Boolean = false, onLaunchApp: (String) -&gt; Unit = {}, onLaunchAfterChallenge: (String) -&gt; Unit = {}, onRestrictedTap: () -&gt; Unit = {}, loadIcon: (String) -&gt; Drawable? = { null }, appFriction: Map&lt;String, List&lt;FrictionRule&gt;&gt; = emptyMap(), appLaunchesToday: Map&lt;String, Int&gt; = emptyMap(), appUsageMinutesToday: Map&lt;String, Int&gt; = emptyMap(), onSetAppAllowed: (String, Boolean) -&gt; Unit = { _, _ -&gt; }, onAddAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onRemoveAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onOpenSettings: () -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@Composable private fun DailyLimitSection( app: AppEntry, currentLimit: FrictionRule?, onRequestChange: (PendingFriction) -&gt; Unit, )</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@Composable private fun FrictionRadioRow(label: String, selected: Boolean, testTag: String, onSelect: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@Composable private fun FrictionToggle(label: String, assigned: Boolean, onToggle: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@Composable private fun TimedWaitSection( app: AppEntry, currentTimer: FrictionRule?, onRequestChange: (PendingFriction) -&gt; Unit, )</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun DrawerAppItem( app: AppEntry, loadIcon: (String) -&gt; Drawable?, onClick: () -&gt; Unit, onLongClick: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun AppOptionsSheet( app: AppEntry, isAllowed: Boolean, isLocked: Boolean, currentFrictions: List&lt;FrictionRule&gt;, onDismiss: () -&gt; Unit, onAddToAllowlist: () -&gt; Unit, onRemoveFromAllowlist: () -&gt; Unit, onRequestChange: (PendingFriction) -&gt; Unit, )</ID>
+    <ID>FunctionNaming:AppDrawerScreen.kt$@Preview(showBackground = true) @Composable private fun AppDrawerScreenPreview()</ID>
+    <ID>FunctionNaming:AppIcon.kt$@Composable fun AppIcon( app: AppEntry, loadIcon: (String) -&gt; Drawable?, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun AddToAllowlistDialog( app: AppEntry, onDismiss: () -&gt; Unit, onConfirmed: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun DailyLimitDialog(app: AppEntry, rule: FrictionRule, onDismiss: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun MathChallengeDialog( app: AppEntry, onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun ReflectionChallenge( questions: List&lt;ReflectionQuestion&gt;, onAllCorrectChange: (Boolean) -&gt; Unit, )</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun ReflectionLaunchDialog( app: AppEntry, count: Int, onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun RestrictedTimeDialog(onDismiss: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun TimedWaitDialog( app: AppEntry, seconds: Int, onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable internal fun UuidChallengeDialog( title: String, message: String, confirmLabel: String, onDismiss: () -&gt; Unit, onConfirmed: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:FrictionDialogs.kt$@Composable private fun YesNoButton(label: String, selected: Boolean, onClick: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:FrictionGate.kt$@Composable fun FrictionGate( app: AppEntry, rules: List&lt;FrictionRule&gt;, drawerLaunchesToday: Int, tokenCount: Int, onCancel: () -&gt; Unit, onComplete: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:FrictionGate.kt$@Composable internal fun LaunchChallengeDialog( app: AppEntry, tokenCount: Int, drawerLaunchesToday: Int, onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:HomeScreen.kt$@Composable fun HomeScreen( state: HomeViewModel.UiState, onGrantUsageAccess: () -&gt; Unit = {}, onLaunchApp: (String) -&gt; Unit = {}, onOpenDrawer: () -&gt; Unit = {}, loadIcon: (String) -&gt; android.graphics.drawable.Drawable? = { null }, )</ID>
+    <ID>FunctionNaming:HomeScreen.kt$@Composable private fun AppIconItem( app: AppEntry, loadIcon: (String) -&gt; android.graphics.drawable.Drawable?, onClick: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:HomeScreen.kt$@Composable private fun StatChip(label: String, value: String)</ID>
+    <ID>FunctionNaming:HomeScreen.kt$@Composable private fun UsageAccessPrompt(onGrantUsageAccess: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:HomeScreen.kt$@Preview(name = "Granted", showBackground = true) @Composable private fun HomeScreenPreview()</ID>
+    <ID>FunctionNaming:HomeScreen.kt$@Preview(name = "Usage access not granted", showBackground = true) @Composable private fun HomeScreenNoAccessPreview()</ID>
+    <ID>FunctionNaming:IntroScreen.kt$@Composable fun IntroScreen(onContinue: () -&gt; Unit = {})</ID>
+    <ID>FunctionNaming:IntroScreen.kt$@Composable private fun Section(title: String, body: String)</ID>
+    <ID>FunctionNaming:IntroScreen.kt$@Preview(showBackground = true) @Composable private fun IntroScreenPreview()</ID>
+    <ID>FunctionNaming:NoImpulseContent.kt$@Composable fun NoImpulseContent( vm: HomeViewModel, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onSwitchLauncher: () -&gt; Unit = {}, onLaunchApp: (String) -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:NoImpulseContent.kt$@Composable private fun LoadingScreen()</ID>
+    <ID>FunctionNaming:PermissionTiles.kt$@Composable internal fun AccessibilityPermissionStep( granted: Boolean, onTapGrant: () -&gt; Unit, onTapWhy: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:PermissionTiles.kt$@Composable internal fun AccessibilityPrePromptDialog( onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:PermissionTiles.kt$@Composable internal fun PermissionStep( title: String, subtitle: String, granted: Boolean, actionLabel: String, onAction: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable fun SettingsScreen( state: HomeViewModel.UiState, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onSwitchLauncher: () -&gt; Unit = {}, onSetRestrictedModeEnabled: (Boolean) -&gt; Unit = {}, onAddAllowedWindow: (TimeWindow) -&gt; Unit = {}, onRemoveAllowedWindow: (TimeWindow) -&gt; Unit = {}, onSetThemeMode: (ThemeMode) -&gt; Unit = {}, onSetTextSize: (TextSize) -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun AllowedWindowRow(window: TimeWindow, onRemove: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun OptionRow( label: String, selected: Boolean, testTag: String, onSelect: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun AddWindowDialog( onDismiss: () -&gt; Unit, onAdd: (TimeWindow) -&gt; Unit, )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Preview(showBackground = true) @Composable private fun SettingsScreenPreview()</ID>
+    <ID>FunctionNaming:SetupScreen.kt$@Composable fun SetupScreen( state: HomeViewModel.UiState, installedApps: List&lt;AppEntry&gt;, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onToggleApp: (String, Boolean) -&gt; Unit = { _, _ -&gt; }, onFinish: () -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:SetupScreen.kt$@Composable private fun AppToggleRow( app: AppEntry, checked: Boolean, onCheckedChange: (Boolean) -&gt; Unit, )</ID>
+    <ID>FunctionNaming:SetupScreen.kt$@Preview(showBackground = true) @Composable private fun SetupScreenPreview()</ID>
+    <ID>FunctionNaming:Theme.kt$@Composable fun NoImpulseTheme( darkTheme: Boolean = true, // Dynamic color is available on Android 12+ dynamicColor: Boolean = true, // Accessibility text scaling. 1f leaves the device font scale untouched; larger // values multiply it, enlarging every sp-based text size (see Type.kt). textScale: Float = 1f, content: @Composable () -&gt; Unit )</ID>
+    <ID>LargeClass:HomeViewModelTest.kt$HomeViewModelTest</ID>
+    <ID>LongMethod:AppDrawerScreen.kt$@Composable fun AppDrawerScreen( installedApps: List&lt;AppEntry&gt;, allowedPackages: Set&lt;String&gt;, lockedPackages: Set&lt;String&gt; = emptySet(), drawerLaunchesToday: Int, isRestrictedNow: Boolean = false, onLaunchApp: (String) -&gt; Unit = {}, onLaunchAfterChallenge: (String) -&gt; Unit = {}, onRestrictedTap: () -&gt; Unit = {}, loadIcon: (String) -&gt; Drawable? = { null }, appFriction: Map&lt;String, List&lt;FrictionRule&gt;&gt; = emptyMap(), appLaunchesToday: Map&lt;String, Int&gt; = emptyMap(), appUsageMinutesToday: Map&lt;String, Int&gt; = emptyMap(), onSetAppAllowed: (String, Boolean) -&gt; Unit = { _, _ -&gt; }, onAddAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onRemoveAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onOpenSettings: () -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:AppDrawerScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun AppOptionsSheet( app: AppEntry, isAllowed: Boolean, isLocked: Boolean, currentFrictions: List&lt;FrictionRule&gt;, onDismiss: () -&gt; Unit, onAddToAllowlist: () -&gt; Unit, onRemoveFromAllowlist: () -&gt; Unit, onRequestChange: (PendingFriction) -&gt; Unit, )</ID>
+    <ID>LongMethod:FrictionDialogs.kt$@Composable internal fun AddToAllowlistDialog( app: AppEntry, onDismiss: () -&gt; Unit, onConfirmed: () -&gt; Unit, )</ID>
+    <ID>LongMethod:HomeScreen.kt$@Composable fun HomeScreen( state: HomeViewModel.UiState, onGrantUsageAccess: () -&gt; Unit = {}, onLaunchApp: (String) -&gt; Unit = {}, onOpenDrawer: () -&gt; Unit = {}, loadIcon: (String) -&gt; android.graphics.drawable.Drawable? = { null }, )</ID>
+    <ID>LongMethod:NoImpulseContent.kt$@Composable fun NoImpulseContent( vm: HomeViewModel, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onSwitchLauncher: () -&gt; Unit = {}, onLaunchApp: (String) -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:PermissionTiles.kt$@Composable internal fun AccessibilityPrePromptDialog( onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit, )</ID>
+    <ID>LongMethod:SettingsScreen.kt$@Composable fun SettingsScreen( state: HomeViewModel.UiState, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onSwitchLauncher: () -&gt; Unit = {}, onSetRestrictedModeEnabled: (Boolean) -&gt; Unit = {}, onAddAllowedWindow: (TimeWindow) -&gt; Unit = {}, onRemoveAllowedWindow: (TimeWindow) -&gt; Unit = {}, onSetThemeMode: (ThemeMode) -&gt; Unit = {}, onSetTextSize: (TextSize) -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:SetupScreen.kt$@Composable fun SetupScreen( state: HomeViewModel.UiState, installedApps: List&lt;AppEntry&gt;, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onToggleApp: (String, Boolean) -&gt; Unit = { _, _ -&gt; }, onFinish: () -&gt; Unit = {}, )</ID>
+    <ID>LongParameterList:AppDrawerScreen.kt$( app: AppEntry, isAllowed: Boolean, isLocked: Boolean, currentFrictions: List&lt;FrictionRule&gt;, onDismiss: () -&gt; Unit, onAddToAllowlist: () -&gt; Unit, onRemoveFromAllowlist: () -&gt; Unit, onRequestChange: (PendingFriction) -&gt; Unit, )</ID>
+    <ID>LongParameterList:AppDrawerScreen.kt$( installedApps: List&lt;AppEntry&gt;, allowedPackages: Set&lt;String&gt;, lockedPackages: Set&lt;String&gt; = emptySet(), drawerLaunchesToday: Int, isRestrictedNow: Boolean = false, onLaunchApp: (String) -&gt; Unit = {}, onLaunchAfterChallenge: (String) -&gt; Unit = {}, onRestrictedTap: () -&gt; Unit = {}, loadIcon: (String) -&gt; Drawable? = { null }, appFriction: Map&lt;String, List&lt;FrictionRule&gt;&gt; = emptyMap(), appLaunchesToday: Map&lt;String, Int&gt; = emptyMap(), appUsageMinutesToday: Map&lt;String, Int&gt; = emptyMap(), onSetAppAllowed: (String, Boolean) -&gt; Unit = { _, _ -&gt; }, onAddAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onRemoveAppFriction: (String, FrictionRule) -&gt; Unit = { _, _ -&gt; }, onOpenSettings: () -&gt; Unit = {}, )</ID>
+    <ID>LongParameterList:Fakes.kt$( usage: DailyUsage?, launcher: LauncherAppsSource = FakeLauncherAppsSource(), settings: SettingsRepository = FakeSettingsRepository(setupComplete = true), accessibility: AccessibilityStatusSource = FakeAccessibilityStatusSource(), usageStats: UsageStatsSource = FakeUsageStatsSource(usage), ledger: FrictionSessionLedger = FrictionSessionLedger(), )</ID>
+    <ID>LongParameterList:Fakes.kt$FakeSettingsRepository$( introSeen: Boolean = true, setupComplete: Boolean = false, allowed: Set&lt;String&gt; = emptySet(), drawerLaunches: Int = 0, appFriction: Map&lt;String, List&lt;FrictionRule&gt;&gt; = emptyMap(), appLaunches: Map&lt;String, Int&gt; = emptyMap(), restrictedModeEnabled: Boolean = false, allowedTimeWindows: List&lt;TimeWindow&gt; = emptyList(), seededAuthenticators: Set&lt;String&gt; = emptySet(), )</ID>
+    <ID>LongParameterList:FrictionGate.kt$( app: AppEntry, rules: List&lt;FrictionRule&gt;, drawerLaunchesToday: Int, tokenCount: Int, onCancel: () -&gt; Unit, onComplete: () -&gt; Unit, )</ID>
+    <ID>LongParameterList:FrictionWatchService.kt$( packageName: String, ownPackageName: String, allowedPackages: Set&lt;String&gt;, launchablePackages: Set&lt;String&gt;, hasLimitRules: (String) -&gt; Boolean, isInSession: (String) -&gt; Boolean, restrictedNow: Boolean, )</ID>
+    <ID>LongParameterList:HomeViewModel.kt$HomeViewModel$( app: Application, private val usageStats: UsageStatsSource, private val launcher: LauncherAppsSource, private val settings: SettingsRepository, private val accessibility: AccessibilityStatusSource, private val frictionLedger: FrictionSessionLedger, @IoDispatcher private val ioDispatcher: CoroutineDispatcher, )</ID>
+    <ID>LongParameterList:NoImpulseContent.kt$( vm: HomeViewModel, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onSwitchLauncher: () -&gt; Unit = {}, onLaunchApp: (String) -&gt; Unit = {}, )</ID>
+    <ID>LongParameterList:SettingsScreen.kt$( state: HomeViewModel.UiState, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onSwitchLauncher: () -&gt; Unit = {}, onSetRestrictedModeEnabled: (Boolean) -&gt; Unit = {}, onAddAllowedWindow: (TimeWindow) -&gt; Unit = {}, onRemoveAllowedWindow: (TimeWindow) -&gt; Unit = {}, onSetThemeMode: (ThemeMode) -&gt; Unit = {}, onSetTextSize: (TextSize) -&gt; Unit = {}, )</ID>
+    <ID>LongParameterList:SetupScreen.kt$( state: HomeViewModel.UiState, installedApps: List&lt;AppEntry&gt;, onGrantUsageAccess: () -&gt; Unit = {}, onSetDefaultHome: () -&gt; Unit = {}, onGrantAccessibility: () -&gt; Unit = {}, onToggleApp: (String, Boolean) -&gt; Unit = { _, _ -&gt; }, onFinish: () -&gt; Unit = {}, )</ID>
+    <ID>MagicNumber:AppDrawerScreen.kt$10</ID>
+    <ID>MagicNumber:AppDrawerScreen.kt$3</ID>
+    <ID>MagicNumber:AppDrawerScreen.kt$30</ID>
+    <ID>MagicNumber:AppDrawerScreen.kt$4</ID>
+    <ID>MagicNumber:AppDrawerScreen.kt$60</ID>
+    <ID>MagicNumber:Color.kt$0xFF625b71</ID>
+    <ID>MagicNumber:Color.kt$0xFF6650a4</ID>
+    <ID>MagicNumber:Color.kt$0xFF7D5260</ID>
+    <ID>MagicNumber:Color.kt$0xFFCCC2DC</ID>
+    <ID>MagicNumber:Color.kt$0xFFD0BCFF</ID>
+    <ID>MagicNumber:Color.kt$0xFFEFB8C8</ID>
+    <ID>MagicNumber:DataStoreSettingsRepository.kt$3</ID>
+    <ID>MagicNumber:FrictionDialogs.kt$1000</ID>
+    <ID>MagicNumber:FrictionDialogs.kt$19</ID>
+    <ID>MagicNumber:FrictionDialogs.kt$3</ID>
+    <ID>MagicNumber:FrictionGate.kt$6</ID>
+    <ID>MagicNumber:FrictionWatchService.kt$FrictionWatchService$100</ID>
+    <ID>MagicNumber:HomeScreen.kt$4</ID>
+    <ID>MagicNumber:HomeViewModel.kt$5</ID>
+    <ID>MagicNumber:HomeViewModel.kt$60</ID>
+    <ID>MagicNumber:HomeViewModel.kt$HomeViewModel$100</ID>
+    <ID>MagicNumber:HomeViewModel.kt$HomeViewModel$1_000L</ID>
+    <ID>MagicNumber:HomeViewModel.kt$HomeViewModel$1_000_000L</ID>
+    <ID>MagicNumber:HomeViewModel.kt$HomeViewModel$60L</ID>
+    <ID>MagicNumber:SettingsScreen.kt$17</ID>
+    <ID>MagicNumber:SettingsScreen.kt$60</ID>
+    <ID>MagicNumber:SettingsScreen.kt$9</ID>
+    <ID>MagicNumber:SystemUsageStatsSource.kt$SystemUsageStatsSource$60_000</ID>
+    <ID>MagicNumber:TextSize.kt$TextSize.LARGE$1.15f</ID>
+    <ID>MagicNumber:TextSize.kt$TextSize.LARGEST$1.3f</ID>
+    <ID>MaxLineLength:OnboardingFlowIntegrationTest.kt$OnboardingFlowIntegrationTest$assertTrue(composeRule.onAllNodesWithTag("appIcon_${calculator.packageName}").fetchSemanticsNodes().isNotEmpty())</ID>
+    <ID>NewLineAtEndOfFile:Color.kt$com.glaikun.noimpulse.ui.theme.Color.kt</ID>
+    <ID>NewLineAtEndOfFile:Theme.kt$com.glaikun.noimpulse.ui.theme.Theme.kt</ID>
+    <ID>NewLineAtEndOfFile:Type.kt$com.glaikun.noimpulse.ui.theme.Type.kt</ID>
+    <ID>ReturnCount:DataStoreSettingsRepository.kt$private fun decodeFriction(encoded: String): Pair&lt;String, FrictionRule&gt;?</ID>
+    <ID>ReturnCount:DataStoreSettingsRepository.kt$private fun decodeLaunchCount(encoded: String): Pair&lt;String, Int&gt;?</ID>
+    <ID>ReturnCount:DataStoreSettingsRepository.kt$private fun decodeWindow(encoded: String): TimeWindow?</ID>
+    <ID>ReturnCount:MainActivity.kt$MainActivity$private fun readLimitExtras(intent: Intent): FrictionRule?</ID>
+    <ID>ReturnCount:SystemUsageStatsSource.kt$SystemUsageStatsSource$override fun recentlyUsedPackages(): List&lt;String&gt;</ID>
+    <ID>TooManyFunctions:DataStoreSettingsRepository.kt$DataStoreSettingsRepository : SettingsRepository</ID>
+    <ID>TooManyFunctions:FrictionDialogs.kt$com.glaikun.noimpulse.ui.FrictionDialogs.kt</ID>
+    <ID>TooManyFunctions:HomeViewModel.kt$HomeViewModel : AndroidViewModel</ID>
+    <ID>TooManyFunctions:SettingsRepository.kt$SettingsRepository</ID>
+    <ID>UnusedPrivateMember:AppDrawerScreen.kt$@Preview(showBackground = true) @Composable private fun AppDrawerScreenPreview()</ID>
+    <ID>UnusedPrivateMember:HomeScreen.kt$@Preview(name = "Granted", showBackground = true) @Composable private fun HomeScreenPreview()</ID>
+    <ID>UnusedPrivateMember:HomeScreen.kt$@Preview(name = "Usage access not granted", showBackground = true) @Composable private fun HomeScreenNoAccessPreview()</ID>
+    <ID>UnusedPrivateMember:IntroScreen.kt$@Preview(showBackground = true) @Composable private fun IntroScreenPreview()</ID>
+    <ID>UnusedPrivateMember:SettingsScreen.kt$@Preview(showBackground = true) @Composable private fun SettingsScreenPreview()</ID>
+    <ID>UnusedPrivateMember:SetupScreen.kt$@Preview(showBackground = true) @Composable private fun SetupScreenPreview()</ID>
+  </CurrentIssues>
+</SmellBaseline>

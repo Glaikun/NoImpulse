@@ -48,6 +48,7 @@ Single `:app` module today. Tests use hand-written fakes, not mocking frameworks
 - `minSdk = 26` (required by `UsageStatsManager` and modern `AccessibilityService` APIs — do not lower)
 - `compileSdk` / `targetSdk` = 36
 - DI: Hilt 2.52 (+ KSP `2.0.21-1.0.28`). **Stay on the AGP 8.x line:** the Hilt Gradle plugin's bytecode transform does not work on AGP 9.0 yet ([google/dagger#5083](https://github.com/google/dagger/issues/5083)). Revisit AGP 9 once Hilt ships AGP-9 support.
+- Android Lint and detekt run in CI (`.github/workflows/code-quality.yml`) as report-only checks — they surface findings but aren't required status checks, so they can't block a merge. Known flake: running `./gradlew lintDebug` a second time right after `./gradlew clean` can fail (AGP/KSP incremental-cache quirk); it works fine as part of a normal, non-clean build. This isn't a real regression and isn't worth chasing — CI is unaffected, since every run starts from a fresh checkout. If you hit this locally, just re-run lint without a preceding clean.
 
 ## Things to avoid suggesting
 
