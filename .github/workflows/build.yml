@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # AGP 8.7.x requires JDK 17 to run Gradle (the app still targets JVM 11 bytecode).
       - name: Set up JDK 17
