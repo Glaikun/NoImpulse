@@ -208,18 +208,25 @@ internal fun TestScope.homeViewModel(
 }
 
 /**
- * Builds a [HomeViewModel] on real dispatchers (`Dispatchers.IO`, and `Dispatchers.Main`
- * left untouched) rather than a [TestScope]'s virtual clock. Used by the `integration` suite,
- * which renders [com.glaikun.noimpulse.ui.NoImpulseContent] — a real Compose composition
- * that keeps its own `vm.state`/`vm.screen` collectors alive for as long as it stays
- * composed, independent of any single test method's [TestScope]. Wiring that up to a
- * virtual-time [TestScope] made the scheduler's end-of-test idle-drain spin forever
- * chasing the ViewModel's infinite per-minute/poll ticker flows, since only
+ * Builds a [HomeViewModel] on real dispatchers rather than a [TestScope]'s virtual clock.
+ * Used by the `integration` suite, which renders
+ * [com.glaikun.noimpulse.ui.NoImpulseContent] — a real Compose composition that keeps its
+ * own `vm.state`/`vm.screen` collectors alive for as long as it stays composed,
+ * independent of any single test method's [TestScope]. Wiring that up to a virtual-time
+ * [TestScope] made the scheduler's end-of-test idle-drain spin forever chasing the
+ * ViewModel's infinite per-minute/poll ticker flows, since only
  * [TestScope.backgroundScope] jobs (not the composition's own collectors) are exempt
- * from that drain. Real dispatchers sidestep the problem entirely: Robolectric runs
- * everything on one thread, so `Dispatchers.Main.immediate` behaves synchronously, and
- * `ComposeContentTestRule`'s interactions/`waitForIdle()` already pump the Robolectric
- * main looper to observe the rest.
+ * from that drain.
+ *
+ * The ViewModel's "IO" dispatcher is deliberately `Dispatchers.Main`, not `Dispatchers.IO`:
+ * a real IO pool is a real background thread, so a settings mutation would only reach
+ * `vm.state` (via `settingsSnapshots()`'s `flowOn`) after an uncontrolled thread hop that
+ * [settle] — which only pumps the compose clock and the Robolectric main looper — never
+ * waits for, making every mutate-then-assert test a race. Routing the hop through the
+ * main looper keeps the whole test single-threaded and deterministic: `Main.immediate`
+ * work runs synchronously, `flowOn(Main)` re-dispatches land on the looper [settle] pumps,
+ * the fakes never block, and the ViewModel's 30s/60s delay tickers stay dormant because
+ * `ShadowLooper.idle()` doesn't advance the clock.
  *
  * [ledger] defaults to a fresh instance but can be supplied so a test can inspect or
  * mutate it directly (e.g. simulating the screen-off receiver's `clearAll()`) while the
@@ -239,5 +246,5 @@ internal fun realHomeViewModel(
     settings = settings,
     accessibility = accessibility,
     frictionLedger = ledger,
-    ioDispatcher = Dispatchers.IO,
+    ioDispatcher = Dispatchers.Main,
 )
