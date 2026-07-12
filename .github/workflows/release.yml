@@ -30,7 +30,7 @@ jobs:
       # Check out via the deploy key so every push (master, tag, develop) is authenticated as
       # the deploy key and therefore bypasses the branch rulesets. fetch-depth: 0 gives the full
       # history the fast-forward merge needs.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: develop
           fetch-depth: 0
