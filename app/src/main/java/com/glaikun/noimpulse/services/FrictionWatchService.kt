@@ -56,6 +56,15 @@ import kotlin.time.Duration.Companion.minutes
  *  - While a minutes-limited app stays in the foreground, a watchdog coroutine re-checks
  *    at the projected limit-hit time — hitting the limit interrupts the app mid-use
  *    rather than waiting for the next launch attempt.
+ *  - Bypassing the session short-circuit means [evaluateLimits] re-runs on *every*
+ *    subsequent event for a limit-carrying package — including the very event Android
+ *    fires for the app's own transition into foreground right after a pass, and any
+ *    internal navigation after that. [exceededDailyLimit]'s `inSession` parameter (fed
+ *    [FrictionSessionLedger.isInSession]) stops DAILY_LAUNCHES — a per-open count — from
+ *    being re-verdicted against a session that already paid for its own open: without
+ *    it, the open that pushes the count to the cap gets immediately blocked by its own
+ *    increment. DAILY_MINUTES is unaffected — it's meant to keep tripping mid-use, so it
+ *    is always checked regardless of session.
  *
  * Session lifetime:
  *  - The [FrictionSessionLedger] records "this app passed friction" entries.
@@ -206,6 +215,14 @@ class FrictionWatchService : AccessibilityService() {
      * walks the whole day's usage events). Over a limit → relaunch with the verdict;
      * under it but out of session → the normal gate; in session and under a minutes
      * limit → arm the [watchdog] to re-check when the limit is projected to trip.
+     *
+     * `inSession` (fed to [exceededDailyLimit]) suppresses a DAILY_LAUNCHES verdict while
+     * [ledger] already has [pkg] marked passed: that session already paid for its open,
+     * so its own count increment must never be turned around and used to block it —
+     * without this, the very open that pushes the count to the cap gets immediately
+     * bounced by its own increment on the next event (which can be the app's own
+     * transition into foreground). DAILY_MINUTES is unaffected, so it can still trip the
+     * block mid-use as intended.
      */
     private fun evaluateLimits(pkg: String) {
         scope.launch {
@@ -217,10 +234,11 @@ class FrictionWatchService : AccessibilityService() {
             } else {
                 0
             }
-            val over = exceededDailyLimit(rules, appLaunchesToday[pkg] ?: 0, minutesToday)
+            val inSession = ledger.isInSession(pkg)
+            val over = exceededDailyLimit(rules, appLaunchesToday[pkg] ?: 0, minutesToday, inSession)
             when {
                 over != null -> startRefriction(pkg, over)
-                !ledger.isInSession(pkg) -> startRefriction(pkg, overLimit = null)
+                !inSession -> startRefriction(pkg, overLimit = null)
                 else -> minutesUntilLimit(rules, minutesToday)?.let { scheduleWatchdog(pkg, it) }
             }
         }

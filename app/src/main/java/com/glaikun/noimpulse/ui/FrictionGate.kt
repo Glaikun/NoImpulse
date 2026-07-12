@@ -85,15 +85,24 @@ internal fun frictionSequence(rules: List<FrictionRule>, tokenCount: Int): List<
  * The LIMIT-kind rule in [rules] the app has exceeded today, or null when under every
  * limit (or no limits are assigned). Checked before the friction gate: a violated
  * limit blocks the app until the day rolls over.
+ *
+ * [inSession] is true when [com.glaikun.noimpulse.data.FrictionSessionLedger] already has
+ * this package marked passed — meaning friction was already paid for the currently open
+ * session. DAILY_LAUNCHES is a per-open count, so it's suppressed in that case: without
+ * this, the very open whose own increment reaches the cap gets immediately blocked by
+ * that same increment on the next re-check (which can be the app's own transition into
+ * foreground, or internal navigation afterward, or a system dialog interjecting).
+ * DAILY_MINUTES keeps accruing during a session by design, so it is never suppressed.
  */
 internal fun exceededDailyLimit(
     rules: List<FrictionRule>,
     launchesToday: Int,
     minutesToday: Int,
+    inSession: Boolean = false,
 ): FrictionRule? = rules.firstOrNull { rule ->
     when (rule.type) {
         FrictionType.DAILY_MINUTES -> minutesToday >= rule.param
-        FrictionType.DAILY_LAUNCHES -> launchesToday >= rule.param
+        FrictionType.DAILY_LAUNCHES -> !inSession && launchesToday >= rule.param
         else -> false
     }
 }
