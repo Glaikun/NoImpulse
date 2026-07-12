@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.detekt)
 }
 
 android {
@@ -49,6 +50,17 @@ android {
             isIncludeAndroidResources = true
         }
     }
+
+    // Known flake (AGP/KSP incremental-cache quirk, not a real regression — see CLAUDE.md's
+    // "Build environment" section): running `lintDebug` a second time right after a `clean`
+    // can fail. A normal (non-clean) build/lint run is unaffected, and so is CI, since every
+    // CI run starts from a fresh checkout.
+    lint {
+        // Grandfathers in every finding that existed when Lint was re-enabled, so this
+        // doesn't fail CI on old debt. Regenerate after intentionally fixing/adding findings
+        // with: ./gradlew updateLintBaseline
+        baseline = file("lint-baseline.xml")
+    }
 }
 
 // Unit tests run against the debug variant only. The integration suite's
@@ -63,13 +75,12 @@ androidComponents {
     }
 }
 
-tasks.whenTaskAdded {
-    if (name.contains("lintAnalyze") ||
-        name.contains("lintVital") ||
-        name.contains("lintReport")||
-        name.contains("lintDebug")) {
-        onlyIf { false }
-    }
+detekt {
+    // No custom config/detekt/detekt.yml — the bundled default ruleset already matches this
+    // project's readability bar, and skipping it is one less file to keep in sync across
+    // detekt upgrades. Baseline grandfathers in pre-existing findings; regenerate after
+    // intentionally fixing/adding findings with: ./gradlew detektBaseline
+    baseline = file("config/detekt/baseline.xml")
 }
 
 dependencies {
