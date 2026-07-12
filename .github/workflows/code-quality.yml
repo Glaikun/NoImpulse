@@ -45,7 +45,7 @@ jobs:
 
       - name: Upload lint report
         if: steps.lint.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-report
           path: |
@@ -55,7 +55,7 @@ jobs:
 
       - name: Upload detekt report
         if: steps.detekt.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: detekt-report
           path: |
