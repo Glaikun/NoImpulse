@@ -76,4 +76,46 @@ class FrictionGateTest {
     fun `no rules means no limit`() {
         assertNull(exceededDailyLimit(emptyList(), launchesToday = 100, minutesToday = 100))
     }
+
+    @Test
+    fun `inSession suppresses an at-limit launches rule`() {
+        assertNull(
+            exceededDailyLimit(
+                listOf(launchesLimit),
+                launchesToday = 5,
+                minutesToday = 0,
+                inSession = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `inSession suppresses an over-limit launches rule`() {
+        assertNull(
+            exceededDailyLimit(
+                listOf(launchesLimit),
+                launchesToday = 9,
+                minutesToday = 0,
+                inSession = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `inSession does not suppress an over-limit minutes rule`() {
+        assertEquals(
+            minutesLimit,
+            exceededDailyLimit(
+                listOf(minutesLimit),
+                launchesToday = 0,
+                minutesToday = 45,
+                inSession = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `inSession defaults to false, preserving existing behavior`() {
+        assertEquals(launchesLimit, exceededDailyLimit(listOf(launchesLimit), launchesToday = 5, minutesToday = 0))
+    }
 }
